@@ -1,6 +1,6 @@
 # emuzeta80
 
-emuzeta80 is a minimalistic Z80 emulator written in C++ for fun and educational purposes. It provides a concise implementation of the Z80 instruction set, making it an ideal resource for learning about CPU architecture and emulation.
+emuzeta80 is a minimalistic Z80 emulator written in C++ for fun and educational purposes. It provides a simple implementation of the Z80 instruction set, making it an good resource for learning about CPU architecture and emulation.
 
 
 ## Getting Started
