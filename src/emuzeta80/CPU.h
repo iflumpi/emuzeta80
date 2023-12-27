@@ -30,6 +30,7 @@
 //-------------------------------------------------------------------------
 
 #include <cstdint>
+
 #include "ALU.h"
 #include "RAM.h"
 #include "RegistersBank.h"
@@ -47,15 +48,17 @@ public:
     CPU(uint16_t ramSize);
 
     uint16_t execute();
-    uint16_t getPC();
-    uint16_t getAF();
-    uint16_t getBC();
-    uint16_t getDE();
-    uint16_t getHL();
+    uint16_t getpc();
+    uint16_t getsp();
+    uint16_t getaf(bool alt = false);
+    uint16_t getbc(bool alt = false);
+    uint16_t getde(bool alt = false);
+    uint16_t gethl(bool alt = false);
     uint16_t getClockCycles();
-    void incPC();
-    void setPC(uint16_t value);
-    void writeMemory(uint8_t value);
+    void incpc();
+    void setpc(uint16_t value);
+    uint8_t read(uint16_t address = -1);
+    void write(uint8_t value, uint16_t address = -1);
 
 protected:
     uint16_t jp(bool condition);

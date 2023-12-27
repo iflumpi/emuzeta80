@@ -60,9 +60,19 @@ CPU::CPU(uint16_t ramSize)
 /**
  * @brief Get current value of PC register
  *
- * @return uint16_t Value of PC register
+ * @return value of PC register
  */
-uint16_t CPU::getPC()
+uint16_t CPU::getpc()
+{
+    return pc.value;
+}
+
+/**
+ * @brief Get current value of SP register
+ *
+ * @return value of SP register
+ */
+uint16_t CPU::getsp()
 {
     return pc.value;
 }
@@ -70,47 +80,51 @@ uint16_t CPU::getPC()
 /**
  * @brief Get current value of AF register
  *
- * @return uint16_t Value of AF register
+ * @alt if true return AF' (alternate bank) else AF (main bank)
+ * @return value of AF register
  */
-uint16_t CPU::getAF()
+uint16_t CPU::getaf(bool alt)
 {
-    return mainBank.af.value;
+    return alt ? alternateBank.af.value : mainBank.af.value;
 }
 
 /**
  * @brief Get current value of BC register
  *
- * @return uint16_t Value of BC register
+ * @alt if true return BC' (alternate bank) else BC (main bank)
+ * @return value of BC register
  */
-uint16_t CPU::getBC()
+uint16_t CPU::getbc(bool alt)
 {
-    return mainBank.bc.value;
+    return alt ? alternateBank.bc.value : mainBank.bc.value;
 }
 
 /**
  * @brief Get current value of DE register
  *
- * @return uint16_t
+ * @alt if true return DE' (alternate bank) else DE (main bank)
+ * @return value of DE register
  */
-uint16_t CPU::getDE()
+uint16_t CPU::getde(bool alt)
 {
-    return mainBank.de.value;
+    return alt ? alternateBank.de.value : mainBank.de.value;
 }
 
 /**
  * @brief Get current value of HL register
  *
- * @return uint16_t
+ * @alt if true return HL' (alternate bank) else HL (main bank)
+ * @return value of HL register
  */
-uint16_t CPU::getHL()
+uint16_t CPU::gethl(bool alt)
 {
-    return mainBank.hl.value;
+    return alt ? alternateBank.hl.value : mainBank.hl.value;
 }
 
 /**
  * @brief Get total of consumed clock cycles
  *
- * @return uint16_t Number of consumed clock cycles
+ * @return number of consumed clock cycles
  */
 uint16_t CPU::getClockCycles()
 {
@@ -121,7 +135,7 @@ uint16_t CPU::getClockCycles()
  * @brief Increase value of PC register by one
  *
  */
-void CPU::incPC()
+void CPU::incpc()
 {
     pc.value++;
 }
@@ -131,19 +145,37 @@ void CPU::incPC()
  *
  * @param value Value to set the PC register
  */
-void CPU::setPC(uint16_t value)
+void CPU::setpc(uint16_t value)
 {
     pc.value = value;
 }
 
 /**
- * @brief Write value into a position of memory pointed by PC register
+ * @brief Read value from a position of memory
+ *
+ * @param address memory address to read value (if not set value is written in memory pointed by PC register)
+ * @return value retrieved from memory address
+ */
+uint8_t CPU::read(uint16_t address)
+{
+    if(address < 0)
+        address = pc.value;
+
+    return memory->peek(address);
+}
+
+/**
+ * @brief Write value into a position of memory
  *
  * @param value 8-bit value to be written in memory
+ * @param address memory address to write value (if not set value is written in memory pointed by PC register)
  */
-void CPU::writeMemory(uint8_t value)
+void CPU::write(uint8_t value, uint16_t address)
 {
-    memory->poke(pc.value, value);
+    if(address < 0)
+        address = pc.value;
+
+    memory->poke(address, value);
 }
 
 /**
