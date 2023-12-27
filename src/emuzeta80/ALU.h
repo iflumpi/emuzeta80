@@ -27,41 +27,47 @@
 // Includes
 //-------------------------------------------------------------------------
 
-#include <cstdint>
 #include "RegistersBank.h"
+#include <cstdint>
 
 //-------------------------------------------------------------------------
 // Class definition
 //-------------------------------------------------------------------------
 
-namespace emuzeta80
-{
-class ALU
-{
+namespace emuzeta80 {
+class ALU {
 public:
-    ALU(RegistersBank* mainBank);
+  ALU(RegistersBank *mainBank);
 
-    uint16_t inc8(Register* reg16, bool high);
-    uint16_t inc16(Register* reg16);
-    uint16_t dec8(Register* reg8, bool high);
-    uint16_t add16(Register* reg16A, Register* reg16B);
-    uint16_t dec16(Register* reg16);
-    uint16_t add8(Register* reg8A, bool highA, Register* reg8B, bool highB, bool carry = false);
-    uint16_t add8(Register* reg8A, bool highA, char value, bool carry = false);
-    uint16_t sub8(Register* reg8A, bool highA, Register* reg8B, bool highB, bool carry = false);
-    uint16_t sub8(Register* reg8A, bool highA, char value, bool carry = false);
+  // ---------------------
+  // Arithmetic operations
+  // ---------------------
+  uint16_t inc8(Register *reg16, bool high);
+  uint16_t dec8(Register *reg8, bool high);
+  uint16_t inc16(Register *reg16);
+  uint16_t add16(Register *reg16A, Register *reg16B);
+  uint16_t dec16(Register *reg16);
+  uint16_t add8(Register *reg8A, bool highA, Register *reg8B, bool highB,
+                bool carry = false);
+  uint16_t add8(Register *reg8A, bool highA, char value, bool carry = false);
+  uint16_t sub8(Register *reg8A, bool highA, Register *reg8B, bool highB,
+                bool carry = false);
+  uint16_t sub8(Register *reg8A, bool highA, char value, bool carry = false);
 
-    uint16_t and8(Register* reg8A, bool highA, Register* reg8B, bool highB);
-    uint16_t and8(Register* reg8A, bool highA, char value);
-    uint16_t or8(Register* reg8A, bool highA, Register* reg8B, bool highB);
-    uint16_t or8(Register* reg8A, bool highA, char value);
-    uint16_t xor8(Register* reg8A, bool highA, Register* reg8B, bool highB);
-    uint16_t xor8(Register* reg8A, bool highA, char value);
-    uint16_t cp8(Register* reg8A, bool highA, Register* reg8B, bool highB);
-    uint16_t cp8(Register* reg8A, bool highA, char value);
+  // ----------------
+  // Logic operations
+  // ----------------
+  uint16_t and8(Register *reg8A, bool highA, Register *reg8B, bool highB);
+  uint16_t and8(Register *reg8A, bool highA, char value);
+  uint16_t or8(Register *reg8A, bool highA, Register *reg8B, bool highB);
+  uint16_t or8(Register *reg8A, bool highA, char value);
+  uint16_t xor8(Register *reg8A, bool highA, Register *reg8B, bool highB);
+  uint16_t xor8(Register *reg8A, bool highA, char value);
+  uint16_t cp8(Register *reg8A, bool highA, Register *reg8B, bool highB);
+  uint16_t cp8(Register *reg8A, bool highA, char value);
 
 protected:
-    RegistersBank* mainBank;
+  RegistersBank *mainBank;
 };
 
 } // namespace emuzeta80
