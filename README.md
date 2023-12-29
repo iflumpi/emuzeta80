@@ -50,6 +50,12 @@ emuzeta80 is a minimalistic Z80 emulator written in C++ for fun and educational 
 3. Initialize and use the Z80 emulator functions as needed.
 
 
+## Related Projects
+
+- **Vizzium:** Z80 debugger that uses emuzeta80 core
+    - https://codeberg.org/iflumpi/vizzium
+
+
 ## License
 
 This project is licensed under the GNU General Public License v3.0 - see the LICENSE file for details.
