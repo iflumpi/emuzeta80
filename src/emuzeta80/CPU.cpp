@@ -243,7 +243,6 @@ uint16_t CPU::ret(bool condition)
  */
 uint16_t CPU::rst(uint16_t address)
 {
-    pc.value++;
     memory->poke(--sp.value, pc.bytes.H);
     memory->poke(--sp.value, pc.bytes.L);
     pc.value = address;
@@ -411,7 +410,7 @@ uint16_t CPU::execute()
 
         auto bit7 = (mainBank.af.bytes.H & 0x80) == 1;
         mainBank.af.bytes.H = mainBank.af.bytes.H << 1;
-        mainBank.af.bytes.H = bit7 ? mainBank.af.bytes.H | 0x01 : mainBank.af.bytes.H & 0xFE;
+        mainBank.af.bytes.H = bit7 ? mainBank.af.bytes.H | 0x80 : mainBank.af.bytes.H & 0xFE;
 
         mainBank.setFlag(Flag::FLAG_C, bit7);
         mainBank.setFlag(Flag::FLAG_N, 0);
@@ -507,7 +506,7 @@ uint16_t CPU::execute()
 
         auto bit0 = (mainBank.af.bytes.H & 0x01) == 1;
         mainBank.af.bytes.H = mainBank.af.bytes.H >> 1;
-        mainBank.af.bytes.H = bit0 ? mainBank.af.bytes.H | 0x80 : mainBank.af.bytes.H & 0xEF;
+        mainBank.af.bytes.H = bit0 ? mainBank.af.bytes.H | 0x80 : mainBank.af.bytes.H & 0x7F;
 
         mainBank.setFlag(Flag::FLAG_C, bit0);
         mainBank.setFlag(Flag::FLAG_N, 0);
@@ -697,16 +696,16 @@ uint16_t CPU::execute()
 
     case 0x1F:
     {
-        // 31: RRCA
+        // 31: RRA
         // The contents of a are rotated right one bit position
         // The value of the bit 0 are copied to FLAG_C
         // The previous value of FLAG_C is copied to bit 7
         // Flags affected: C, N, H
 
         auto bit0 = (mainBank.af.bytes.H & 0x01) == 1;
-        auto flagc = mainBank.getFlag(Flag::FLAG_C) == 1;
+        auto flag_c = mainBank.getFlag(Flag::FLAG_C) == 1;
         mainBank.af.bytes.H = mainBank.af.bytes.H >> 1;
-        mainBank.af.bytes.H = flagc ? mainBank.af.bytes.H | 0x80 : mainBank.af.bytes.H & 0xEF;
+        mainBank.af.bytes.H = flag_c ? mainBank.af.bytes.H | 0x80 : mainBank.af.bytes.H & 0x7F;
 
         mainBank.setFlag(Flag::FLAG_C, bit0);
         mainBank.setFlag(Flag::FLAG_N, 0);
@@ -954,7 +953,7 @@ uint16_t CPU::execute()
         // Increase SP register by 1
         // Flags affected: None
 
-        mainBank.hl.value += 1;
+        sp.value += 1;
 
         clockCycles += 6;
         break;
@@ -1277,7 +1276,7 @@ uint16_t CPU::execute()
 
         mainBank.bc.bytes.L = memory->peek(mainBank.hl.value);
 
-        clockCycles += 4;
+        clockCycles += 7;
         break;
     }
 
@@ -1469,7 +1468,7 @@ uint16_t CPU::execute()
 
         mainBank.de.bytes.L = memory->peek(mainBank.hl.value);
 
-        clockCycles += 4;
+        clockCycles += 7;
         break;
     }
 
@@ -1661,7 +1660,7 @@ uint16_t CPU::execute()
 
         mainBank.hl.bytes.L = memory->peek(mainBank.hl.value);
 
-        clockCycles += 4;
+        clockCycles += 7;
         break;
     }
 
@@ -1908,6 +1907,16 @@ uint16_t CPU::execute()
         // Flags affected: C, N, P, H, Z, S
 
         clockCycles += alu->add8(&(mainBank.af), true, &(mainBank.hl), true);
+        break;
+    }
+
+    case 0x85:
+    {
+        // 133: ADD A, L
+        // Adds L to A
+        // Flags affected: C, N, P, H, Z, S
+
+        clockCycles += alu->add8(&(mainBank.af), true, &(mainBank.hl), false);
         break;
     }
 
@@ -2231,7 +2240,7 @@ uint16_t CPU::execute()
         // AND operation L to A
         // Flags affected: C, N, P, H, Z, S
 
-        clockCycles += alu->and8(&(mainBank.af), true, &(mainBank.hl), false) + 3;
+        clockCycles += alu->and8(&(mainBank.af), true, &(mainBank.hl), false);
         break;
     }
 
@@ -2252,7 +2261,7 @@ uint16_t CPU::execute()
         // AND operation from A to A
         // Flags affected: C, N, P, H, Z, S
 
-        clockCycles += alu->and8(&(mainBank.af), true, &(mainBank.af), true) + 3;
+        clockCycles += alu->and8(&(mainBank.af), true, &(mainBank.af), true);
         break;
     }
 
@@ -2312,7 +2321,7 @@ uint16_t CPU::execute()
         // XOR operation L to A
         // Flags affected: C, N, P, H, Z, S
 
-        clockCycles += alu->xor8(&(mainBank.af), true, &(mainBank.hl), false) + 3;
+        clockCycles += alu->xor8(&(mainBank.af), true, &(mainBank.hl), false);
         break;
     }
 
@@ -2659,9 +2668,8 @@ uint16_t CPU::execute()
         // Flags affected: C, N, P, H, Z, S
 
         char value = (char)memory->peek(pc.value++);
-        clockCycles += alu->add8(&(mainBank.af), true, &(mainBank.de), true, true);
+        clockCycles += alu->add8(&(mainBank.af), true, value, true) + 3;
 
-        clockCycles += 3;
         break;
     }
 
@@ -2850,8 +2858,8 @@ uint16_t CPU::execute()
         // Flags affected: C, N, P, H, Z, S
 
         auto value = memory->peek(pc.value++);
-        clockCycles += alu->sub8(&(mainBank.af), true, &(mainBank.bc), true, true);
-        clockCycles += 3;
+        clockCycles += alu->sub8(&(mainBank.af), true, value, true) + 3;
+        
         break;
     }
 
@@ -2868,10 +2876,10 @@ uint16_t CPU::execute()
     case 0xE0:
     {
         // 224: RET PO
-        // Pop the content of memory pointed by SP into PC if FLAG_C is 1
+        // Pop the content of memory pointed by SP into PC if FLAG_C is 0
         // Flags affected: None
 
-        clockCycles += ret(mainBank.getFlag(Flag::FLAG_C) == 1);
+        clockCycles += ret(mainBank.getFlag(Flag::FLAG_C) == 0);
         break;
     }
 
@@ -2959,10 +2967,10 @@ uint16_t CPU::execute()
     case 0xE8:
     {
         // 232: RET PE
-        // Pop the content of memory pointed by SP into PC if FLAG_P is 0
+        // Pop the content of memory pointed by SP into PC if FLAG_P is 1
         // Flags affected: None
 
-        clockCycles += ret(mainBank.getFlag(Flag::FLAG_P) == 0);
+        clockCycles += ret(mainBank.getFlag(Flag::FLAG_P) == 1);
         break;
     }
 
@@ -2972,8 +2980,8 @@ uint16_t CPU::execute()
         // Set PC value to contents of memory pointed by HL register
         // Flags affected: None
 
-        auto value = memory->peek(mainBank.hl.value);
-        pc.value = value;
+        auto address = memory->peek(mainBank.hl.value) + (memory->peek(mainBank.hl.value + 1) << 8);        
+        pc.value = address;
 
         clockCycles += 10;
         break;
@@ -2994,8 +3002,9 @@ uint16_t CPU::execute()
         // 235: EX DE, HL
         // Exchanges the contents of DE and HL
 
-        uint16_t de = mainBank.af.value;
-        mainBank.de.value = mainBank.hl.value = de;
+        uint16_t de = mainBank.de.value;
+        mainBank.de.value = mainBank.hl.value;
+        mainBank.hl.value = de;
 
         clockCycles += 4;
         break;
@@ -3054,11 +3063,11 @@ uint16_t CPU::execute()
 
     case 0xF1:
     {
-        // 241: POP BC
-        // Pop the content of memory pointed by SP into BC
+        // 241: POP AF
+        // Pop the content of memory pointed by SP into AF
         // Flags affected: None
 
-        mainBank.bc.value = memory->peek(sp.value++) + (memory->peek(sp.value++) << 8);
+        mainBank.af.value = memory->peek(sp.value++) + (memory->peek(sp.value++) << 8);
 
         clockCycles += 10;
         break;
@@ -3118,7 +3127,8 @@ uint16_t CPU::execute()
         // Flags affected: C, N, P, H, Z, S
 
         auto value = memory->peek(pc.value++) + (memory->peek(pc.value++) << 8);
-        clockCycles += alu->xor8(&(mainBank.af), true, value) + 3;
+        clockCycles += alu->or8(&(mainBank.af), true, value) + 3;        
+        break;
     }
 
     case 0xF7:
@@ -3137,7 +3147,7 @@ uint16_t CPU::execute()
         // Pop the content of memory pointed by SP into PC if FLAG_S is 1
         // Flags affected: None
 
-        clockCycles += ret(mainBank.getFlag(Flag::FLAG_S) == 0);
+        clockCycles += ret(mainBank.getFlag(Flag::FLAG_S) == 1);
         break;
     }
 
