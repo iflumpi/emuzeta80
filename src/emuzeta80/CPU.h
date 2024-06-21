@@ -45,7 +45,7 @@ namespace emuzeta80
 class CPU
 {
 public:
-    CPU(uint16_t ramSize);
+    CPU(uint64_t ramSize);
 
     uint16_t execute();
     uint16_t getpc();
@@ -54,7 +54,7 @@ public:
     uint16_t getbc(bool alt = false);
     uint16_t getde(bool alt = false);
     uint16_t gethl(bool alt = false);
-    uint16_t getClockCycles();
+    uint64_t getClockCycles();
     void incpc();
     void setpc(uint16_t value);
     uint8_t read(uint16_t address = -1);
@@ -80,7 +80,7 @@ public:
     Register iY; //< Index Y;
     uint8_t i;   //< Interruption Vector
     uint8_t r;   //< Memory Refresh
-    uint16_t clockCycles = 0;
+    uint64_t clockCycles = 0;
 };
 
 } // namespace emuzeta80

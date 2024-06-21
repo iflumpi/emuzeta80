@@ -40,11 +40,11 @@ namespace emuzeta80
 /**
  * @brief Construct a new CPU instance
  *
- * Create a RAM memory of 64 kb
+ * Create a RAM memory
  * Create ALU for arithmetical and logic operations
  * Initialize values of PC, SP, iX and iY registers to 0
  */
-CPU::CPU(uint16_t ramSize)
+CPU::CPU(uint64_t ramSize)
 {
     memory = new RAM(ramSize); // 64 kb
     alu = new ALU(&mainBank);
@@ -126,7 +126,7 @@ uint16_t CPU::gethl(bool alt)
  *
  * @return number of consumed clock cycles
  */
-uint16_t CPU::getClockCycles()
+uint64_t CPU::getClockCycles()
 {
     return clockCycles;
 }
