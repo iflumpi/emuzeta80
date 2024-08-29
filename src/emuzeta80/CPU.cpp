@@ -47,6 +47,7 @@ namespace emuzeta80
 CPU::CPU(uint64_t ramSize)
 {
     memory = new RAM(ramSize); // 64 kb
+    devices = new IOPorts();
     alu = new ALU(&mainBank);
 
     pc.value = 0;
@@ -178,6 +179,22 @@ void CPU::write(uint8_t value, uint16_t address)
     memory->poke(address, value);
 }
 
+/*
+ * @brief Read value from a I/O port
+ */
+uint8_t CPU::readport(uint16_t port)
+{
+    return devices->read(port);
+}
+
+/*
+ * @brief Write a value into a I/O port
+ */
+void CPU::writeport(uint8_t value, uint16_t port)
+{
+    devices->write(port, value);
+}
+
 /**
  * @brief Conditional jump based on the specified condition
  *
@@ -250,46 +267,24 @@ uint16_t CPU::rst(uint16_t address)
     return 11;
 }
 
-/**
- * @brief Increases value of a byte in memory by one
- *
- * @param address memory address with value to be increased
- * @return number of cycles of the operation
- */
 uint16_t CPU::inc8mem(uint16_t address)
 {
     uint8_t value = memory->peek(address);
-    uint8_t updatedValue = value + 1;
-    memory->poke(address, updatedValue);
+    auto cc = alu->inc8(&value);
 
-    mainBank.setFlag(Flag::FLAG_N, false);
-    mainBank.setFlag(Flag::FLAG_P, value == 0x7F);
-    mainBank.setFlag(Flag::FLAG_H, value == 0x0F);
-    mainBank.setFlag(Flag::FLAG_Z, updatedValue == 0);
-    mainBank.setFlag(Flag::FLAG_S, updatedValue == 0x80);
+    memory->poke(address, value);
 
-    return 11;
+    return cc + 7;
 }
 
-/**
- * @brief Decreases value of a byte in memory by one
- *
- * @param address memory address with value to be decreased
- * @return uint16_t number of cycles of the operation
- */
 uint16_t CPU::dec8mem(uint16_t address)
 {
     uint8_t value = memory->peek(address);
-    uint8_t updatedValue = value - 1;
-    memory->poke(address, updatedValue);
+    auto cc = alu->dec8(&value);
 
-    mainBank.setFlag(Flag::FLAG_N, true);
-    mainBank.setFlag(Flag::FLAG_P, value == 0x80); // -128 = 0x80 in 2a complement
-    mainBank.setFlag(Flag::FLAG_H, updatedValue == 0x0F);
-    mainBank.setFlag(Flag::FLAG_Z, updatedValue == 0);
-    mainBank.setFlag(Flag::FLAG_S, updatedValue == 0x7F);
+    memory->poke(mainBank.hl.value, value);
 
-    return 11;
+    return cc + 7;
 }
 
 /**
@@ -299,14 +294,27 @@ uint16_t CPU::dec8mem(uint16_t address)
  * @param high flag to specify if select the higher or lower byte of the target register
  * @return uint16_t number of cycles of the operation
  */
-uint16_t CPU::ld8mem(Register* reg16, bool high)
+uint16_t CPU::ld8reg(Register* reg16, bool high)
+{
+    return ld8reg(reg16, high, pc.value++);
+}
+
+uint16_t CPU::ld8reg(Register* reg16, bool high, uint16_t address)
 {
     if(high)
-        reg16->bytes.H = memory->peek(pc.value++);
+        reg16->bytes.H = memory->peek(address);
     else
-        reg16->bytes.L = memory->peek(pc.value++);
+        reg16->bytes.L = memory->peek(address);
 
     return 7;
+}
+
+uint16_t CPU::ld16reg(Register* reg16)
+{
+    reg16->bytes.L = memory->peek(pc.value++);
+    reg16->bytes.H = memory->peek(pc.value++);
+
+    return 10;
 }
 
 /**
@@ -321,7 +329,7 @@ uint16_t CPU::ld8mem(Register* reg16, bool high)
  * 	- Update flags if required
  *  - Update total number of cycle clocks
  *
- * @return uint16_t
+ * @return uint16_t 0
  */
 uint16_t CPU::execute()
 {
@@ -343,9 +351,7 @@ uint16_t CPU::execute()
         // Load content of memory to the BC register
         // Flags affected: None
 
-        mainBank.bc.bytes.L = memory->peek(pc.value++);
-        mainBank.bc.bytes.H = memory->peek(pc.value++);
-        clockCycles += 10;
+        clockCycles += ld16reg(&(mainBank.bc));
         break;
     }
 
@@ -377,7 +383,7 @@ uint16_t CPU::execute()
         // Increases value of B by one
         // Flags affected: N, P, H, Z, S
 
-        clockCycles += alu->inc8(&(mainBank.bc), true);
+        clockCycles += alu->inc8(&(mainBank.bc.bytes.H));
         break;
     }
 
@@ -387,7 +393,7 @@ uint16_t CPU::execute()
         // Decrements value of B by one
         // Flags affected: N, P, H, Z, S
 
-        clockCycles += alu->dec8(&(mainBank.bc), true);
+        clockCycles += alu->dec8(&(mainBank.bc.bytes.H));
         break;
     }
 
@@ -397,7 +403,7 @@ uint16_t CPU::execute()
         // Loads contents of memory (*) to B
         // Flags affected: None
 
-        clockCycles += ld8mem(&(mainBank.bc), true);
+        clockCycles += ld8reg(&(mainBank.bc), true);
         break;
     }
 
@@ -473,7 +479,7 @@ uint16_t CPU::execute()
         // Increase the value of C by 1
         // Flags affected: N, P, H, Z, S
 
-        clockCycles += alu->inc8(&(mainBank.bc), false);
+        clockCycles += alu->inc8(&(mainBank.bc.bytes.L));
         break;
     }
 
@@ -483,7 +489,7 @@ uint16_t CPU::execute()
         // Decrease the value of C by 1
         // Flags affected: N, P, H, Z, S
 
-        clockCycles += alu->dec8(&(mainBank.bc), false);
+        clockCycles += alu->dec8(&(mainBank.bc.bytes.L));
         break;
     }
 
@@ -493,7 +499,7 @@ uint16_t CPU::execute()
         // Loads contents of memory (*) to B
         // Flags affected: None
 
-        clockCycles += ld8mem(&(mainBank.bc), false);
+        clockCycles += ld8reg(&(mainBank.bc), false);
         break;
     }
 
@@ -573,7 +579,7 @@ uint16_t CPU::execute()
         // Increases value of D by one
         // Flags affected: N, P, H, Z, S
 
-        clockCycles += alu->inc8(&(mainBank.de), true);
+        clockCycles += alu->inc8(&(mainBank.de.bytes.H));
         break;
     }
 
@@ -583,7 +589,7 @@ uint16_t CPU::execute()
         // Decrements value of D by one
         // Flags affected: N, P, H, Z, S
 
-        clockCycles += alu->dec8(&(mainBank.de), true);
+        clockCycles += alu->dec8(&(mainBank.de.bytes.H));
         break;
     }
 
@@ -593,7 +599,7 @@ uint16_t CPU::execute()
         // Loads contents of memory (*) to D
         // Flags affected: None
 
-        clockCycles += ld8mem(&(mainBank.de), true);
+        clockCycles += ld8reg(&(mainBank.de), true);
         break;
     }
 
@@ -670,7 +676,7 @@ uint16_t CPU::execute()
         // Increase the value of E by 1
         // Flags affected: N, P, H, Z, S
 
-        clockCycles += alu->inc8(&(mainBank.de), false);
+        clockCycles += alu->inc8(&(mainBank.de.bytes.L));
         break;
     }
 
@@ -680,7 +686,7 @@ uint16_t CPU::execute()
         // Decrease the value of E by 1
         // Flags affected: N, P, H, Z, S
 
-        clockCycles += alu->dec8(&(mainBank.de), false);
+        clockCycles += alu->dec8(&(mainBank.de.bytes.L));
         break;
     }
 
@@ -690,7 +696,7 @@ uint16_t CPU::execute()
         // Loads contents of memory (*) to E
         // Flags affected: None
 
-        clockCycles += ld8mem(&(mainBank.de), false);
+        clockCycles += ld8reg(&(mainBank.de), false);
         break;
     }
 
@@ -773,7 +779,7 @@ uint16_t CPU::execute()
         // Increases value of D by one
         // Flags affected: N, P, H, Z, S
 
-        clockCycles += alu->inc8(&(mainBank.hl), true);
+        clockCycles += alu->inc8(&(mainBank.hl.bytes.H));
         break;
     }
 
@@ -783,7 +789,7 @@ uint16_t CPU::execute()
         // Decrements value of H by one
         // Flags affected: N, P, H, Z, S
 
-        clockCycles += alu->dec8(&(mainBank.hl), true);
+        clockCycles += alu->dec8(&(mainBank.hl.bytes.H));
         break;
     }
 
@@ -793,7 +799,7 @@ uint16_t CPU::execute()
         // Loads contents of memory (*) to H
         // Flags affected: None
 
-        clockCycles += ld8mem(&(mainBank.hl), true);
+        clockCycles += ld8reg(&(mainBank.hl), true);
         break;
     }
 
@@ -866,7 +872,7 @@ uint16_t CPU::execute()
         // Increase the value of L by 1
         // Flags affected: N, P, H, Z, S
 
-        clockCycles += alu->inc8(&(mainBank.hl), false);
+        clockCycles += alu->inc8(&(mainBank.hl.bytes.L));
         break;
     }
 
@@ -876,7 +882,7 @@ uint16_t CPU::execute()
         // Decrease the value of L by 1
         // Flags affected: N, P, H, Z, S
 
-        clockCycles += alu->dec8(&(mainBank.hl), false);
+        clockCycles += alu->dec8(&(mainBank.hl.bytes.L));
         break;
     }
 
@@ -886,7 +892,7 @@ uint16_t CPU::execute()
         // Loads contents of memory (*) to L
         // Flags affected: None
 
-        clockCycles += ld8mem(&(mainBank.hl), false);
+        clockCycles += ld8reg(&(mainBank.hl), false);
         break;
     }
 
@@ -976,6 +982,7 @@ uint16_t CPU::execute()
         // Flags affected: N, P, H, Z, S
 
         clockCycles += dec8mem(mainBank.hl.value);
+
         break;
     }
 
@@ -1062,7 +1069,7 @@ uint16_t CPU::execute()
         // Increase the value of A by 1
         // Flags affected: N, P, H, Z, S
 
-        clockCycles += alu->inc8(&(mainBank.af), true);
+        clockCycles += alu->inc8(&(mainBank.af.bytes.H));
         break;
     }
 
@@ -1072,7 +1079,7 @@ uint16_t CPU::execute()
         // Decrease the value of A by 1
         // Flags affected: N, P, H, Z, S
 
-        clockCycles += alu->dec8(&(mainBank.af), true);
+        clockCycles += alu->dec8(&(mainBank.af.bytes.H));
         break;
     }
 
@@ -1082,7 +1089,7 @@ uint16_t CPU::execute()
         // Loads contents of memory (*) to A
         // Flags affected: None
 
-        clockCycles += ld8mem(&(mainBank.af), true);
+        clockCycles += ld8reg(&(mainBank.af), true);
         break;
     }
 
@@ -1866,7 +1873,7 @@ uint16_t CPU::execute()
         // Adds B to A
         // Flags affected: C, N, P, H, Z, S
 
-        clockCycles += alu->add8(&(mainBank.af), true, &(mainBank.bc), true);
+        clockCycles += alu->add8(&(mainBank.af.bytes.H), mainBank.bc.bytes.H);
         break;
     }
 
@@ -1876,7 +1883,7 @@ uint16_t CPU::execute()
         // Adds C to A
         // Flags affected: C, N, P, H, Z, S
 
-        clockCycles += alu->add8(&(mainBank.af), true, &(mainBank.bc), false);
+        clockCycles += alu->add8(&(mainBank.af.bytes.H), mainBank.bc.bytes.L);
         break;
     }
 
@@ -1886,7 +1893,7 @@ uint16_t CPU::execute()
         // Adds D to A
         // Flags affected: C, N, P, H, Z, S
 
-        clockCycles += alu->add8(&(mainBank.af), true, &(mainBank.de), true);
+        clockCycles += alu->add8(&(mainBank.af.bytes.H), mainBank.de.bytes.H);
         break;
     }
 
@@ -1896,7 +1903,7 @@ uint16_t CPU::execute()
         // Adds E to A
         // Flags affected: C, N, P, H, Z, S
 
-        clockCycles += alu->add8(&(mainBank.af), true, &(mainBank.de), false);
+        clockCycles += alu->add8(&(mainBank.af.bytes.H), mainBank.de.bytes.L);
         break;
     }
 
@@ -1906,7 +1913,7 @@ uint16_t CPU::execute()
         // Adds H to A
         // Flags affected: C, N, P, H, Z, S
 
-        clockCycles += alu->add8(&(mainBank.af), true, &(mainBank.hl), true);
+        clockCycles += alu->add8(&(mainBank.af.bytes.H), mainBank.hl.bytes.H);
         break;
     }
 
@@ -1916,7 +1923,7 @@ uint16_t CPU::execute()
         // Adds L to A
         // Flags affected: C, N, P, H, Z, S
 
-        clockCycles += alu->add8(&(mainBank.af), true, &(mainBank.hl), false);
+        clockCycles += alu->add8(&(mainBank.af.bytes.H), mainBank.hl.bytes.L);
         break;
     }
 
@@ -1927,7 +1934,7 @@ uint16_t CPU::execute()
         // Flags affected: C, N, P, H, Z, S
 
         char value = (char)memory->peek(mainBank.hl.value);
-        clockCycles += alu->add8(&(mainBank.af), true, value) + 3;
+        clockCycles += alu->add8(&(mainBank.af.bytes.H), value) + 3;
         break;
     }
 
@@ -1937,7 +1944,7 @@ uint16_t CPU::execute()
         // Adds A to A
         // Flags affected: C, N, P, H, Z, S
 
-        clockCycles += alu->add8(&(mainBank.af), true, &(mainBank.af), true);
+        clockCycles += alu->add8(&(mainBank.af.bytes.H), mainBank.af.bytes.H, true);
         break;
     }
 
@@ -1947,7 +1954,7 @@ uint16_t CPU::execute()
         // Adds B and carry flag to A
         // Flags affected: C, N, P, H, Z, S
 
-        clockCycles += alu->add8(&(mainBank.af), true, &(mainBank.bc), true, true);
+        clockCycles += alu->add8(&(mainBank.af.bytes.H), mainBank.bc.bytes.H, true);
         break;
     }
 
@@ -1957,7 +1964,7 @@ uint16_t CPU::execute()
         // Adds C and carry flag to A
         // Flags affected: C, N, P, H, Z, S
 
-        clockCycles += alu->add8(&(mainBank.af), true, &(mainBank.bc), false, true);
+        clockCycles += alu->add8(&(mainBank.af.bytes.H), mainBank.bc.bytes.L, true);
         break;
     }
 
@@ -1967,7 +1974,7 @@ uint16_t CPU::execute()
         // Adds D and carry flag to A
         // Flags affected: C, N, P, H, Z, S
 
-        clockCycles += alu->add8(&(mainBank.af), true, &(mainBank.de), true, true);
+        clockCycles += alu->add8(&(mainBank.af.bytes.H), mainBank.de.bytes.H, true);
         break;
     }
 
@@ -1977,7 +1984,7 @@ uint16_t CPU::execute()
         // Adds E and carry flag to A
         // Flags affected: C, N, P, H, Z, S
 
-        clockCycles += alu->add8(&(mainBank.af), true, &(mainBank.de), false, true);
+        clockCycles += alu->add8(&(mainBank.af.bytes.H), mainBank.de.bytes.L, true);
         break;
     }
 
@@ -1987,7 +1994,7 @@ uint16_t CPU::execute()
         // Adds H and carry flag to A
         // Flags affected: C, N, P, H, Z, S
 
-        clockCycles += alu->add8(&(mainBank.af), true, &(mainBank.hl), true, true);
+        clockCycles += alu->add8(&(mainBank.af.bytes.H), mainBank.hl.bytes.H, true);
         break;
     }
 
@@ -1997,7 +2004,7 @@ uint16_t CPU::execute()
         // Adds L and carry flag to A
         // Flags affected: C, N, P, H, Z, S
 
-        clockCycles += alu->add8(&(mainBank.af), true, &(mainBank.hl), false, true);
+        clockCycles += alu->add8(&(mainBank.af.bytes.H), mainBank.hl.bytes.L, true);
         break;
     }
 
@@ -2008,7 +2015,8 @@ uint16_t CPU::execute()
         // Flags affected: C, N, P, H, Z, S
 
         char value = (char)memory->peek(mainBank.hl.value);
-        clockCycles += alu->add8(&(mainBank.af), true, value, true) + 3;
+        clockCycles += alu->add8(&(mainBank.af.bytes.H), value, true) + 3;
+
         break;
     }
 
@@ -2018,7 +2026,7 @@ uint16_t CPU::execute()
         // Adds A and carry flag to A
         // Flags affected: C, N, P, H, Z, S
 
-        clockCycles += alu->add8(&(mainBank.af), true, &(mainBank.af), true, true);
+        clockCycles += alu->add8(&(mainBank.af.bytes.H), mainBank.af.bytes.H, true);
         break;
     }
 
@@ -2028,7 +2036,7 @@ uint16_t CPU::execute()
         // Subtracts B from A
         // Flags affected: C, N, P, H, Z, S
 
-        clockCycles += alu->sub8(&(mainBank.af), true, &(mainBank.bc), true, false);
+        clockCycles += alu->sub8(&(mainBank.af.bytes.H), mainBank.bc.bytes.H);
         break;
     }
 
@@ -2038,7 +2046,7 @@ uint16_t CPU::execute()
         // Subtracts C from A
         // Flags affected: C, N, P, H, Z, S
 
-        clockCycles += alu->sub8(&(mainBank.af), true, &(mainBank.bc), false, false);
+        clockCycles += alu->sub8(&(mainBank.af.bytes.H), mainBank.bc.bytes.L);
         break;
     }
 
@@ -2048,7 +2056,7 @@ uint16_t CPU::execute()
         // Subtracts C from A
         // Flags affected: C, N, P, H, Z, S
 
-        clockCycles += alu->sub8(&(mainBank.af), true, &(mainBank.de), true, false);
+        clockCycles += alu->sub8(&(mainBank.af.bytes.H), mainBank.de.bytes.H);
         break;
     }
 
@@ -2058,7 +2066,7 @@ uint16_t CPU::execute()
         // Subtracts E from A
         // Flags affected: C, N, P, H, Z, S
 
-        clockCycles += alu->sub8(&(mainBank.af), true, &(mainBank.de), false, false);
+        clockCycles += alu->sub8(&(mainBank.af.bytes.H), mainBank.de.bytes.L);
         break;
     }
 
@@ -2068,7 +2076,7 @@ uint16_t CPU::execute()
         // Subtracts H from A
         // Flags affected: C, N, P, H, Z, S
 
-        clockCycles += alu->sub8(&(mainBank.af), true, &(mainBank.hl), true, false);
+        clockCycles += alu->sub8(&(mainBank.af.bytes.H), mainBank.hl.bytes.H);
         break;
     }
 
@@ -2078,7 +2086,7 @@ uint16_t CPU::execute()
         // Subtracts L from A
         // Flags affected: C, N, P, H, Z, S
 
-        clockCycles += alu->sub8(&(mainBank.af), true, &(mainBank.hl), false, false);
+        clockCycles += alu->sub8(&(mainBank.af.bytes.H), mainBank.hl.bytes.L);
         break;
     }
 
@@ -2089,7 +2097,7 @@ uint16_t CPU::execute()
         // Flags affected: C, N, P, H, Z, S
 
         char value = (char)memory->peek(mainBank.hl.value);
-        clockCycles += alu->sub8(&(mainBank.af), true, value, false) + 3;
+        clockCycles += alu->sub8(&(mainBank.af.bytes.H), value) + 3;
         break;
     }
 
@@ -2099,7 +2107,7 @@ uint16_t CPU::execute()
         // Subtracts A from A
         // Flags affected: C, N, P, H, Z, S
 
-        clockCycles += alu->sub8(&(mainBank.af), true, &(mainBank.af), true, false);
+        clockCycles += alu->sub8(&(mainBank.af.bytes.H), mainBank.af.bytes.H);
         break;
     }
 
@@ -2109,7 +2117,7 @@ uint16_t CPU::execute()
         // Subtracts B and carry flag from A
         // Flags affected: C, N, P, H, Z, S
 
-        clockCycles += alu->sub8(&(mainBank.af), true, &(mainBank.bc), true, true);
+        clockCycles += alu->sub8(&(mainBank.af.bytes.H), mainBank.bc.bytes.H, true);
         break;
     }
 
@@ -2119,7 +2127,7 @@ uint16_t CPU::execute()
         // Subtracts C and carry flag from A
         // Flags affected: C, N, P, H, Z, S
 
-        clockCycles += alu->sub8(&(mainBank.af), true, &(mainBank.bc), false, true);
+        clockCycles += alu->sub8(&(mainBank.af.bytes.H), mainBank.bc.bytes.L, true);
         break;
     }
 
@@ -2129,7 +2137,7 @@ uint16_t CPU::execute()
         // Subtracts D and carry flag from A
         // Flags affected: C, N, P, H, Z, S
 
-        clockCycles += alu->sub8(&(mainBank.af), true, &(mainBank.de), true, true);
+        clockCycles += alu->sub8(&(mainBank.af.bytes.H), mainBank.de.bytes.H, true);
         break;
     }
 
@@ -2139,7 +2147,7 @@ uint16_t CPU::execute()
         // Subtracts E and carry flag from A
         // Flags affected: C, N, P, H, Z, S
 
-        clockCycles += alu->sub8(&(mainBank.af), true, &(mainBank.de), false, true);
+        clockCycles += alu->sub8(&(mainBank.af.bytes.H), mainBank.de.bytes.L, true);
         break;
     }
 
@@ -2149,7 +2157,7 @@ uint16_t CPU::execute()
         // Subtracts H and carry flag from A
         // Flags affected: C, N, P, H, Z, S
 
-        clockCycles += alu->sub8(&(mainBank.af), true, &(mainBank.hl), true, true);
+        clockCycles += alu->sub8(&(mainBank.af.bytes.H), mainBank.hl.bytes.H, true);
         break;
     }
 
@@ -2159,7 +2167,7 @@ uint16_t CPU::execute()
         // Subtracts L and carry flag from A
         // Flags affected: C, N, P, H, Z, S
 
-        clockCycles += alu->sub8(&(mainBank.af), true, &(mainBank.hl), false, true);
+        clockCycles += alu->sub8(&(mainBank.af.bytes.H), mainBank.hl.bytes.L, true);
         break;
     }
 
@@ -2170,7 +2178,7 @@ uint16_t CPU::execute()
         // Flags affected: C, N, P, H, Z, S
 
         char value = (char)memory->peek(mainBank.hl.value);
-        clockCycles += alu->sub8(&(mainBank.af), true, value, true) + 3;
+        clockCycles += alu->sub8(&(mainBank.af.bytes.H), value, true) + 3;
         break;
     }
 
@@ -2180,7 +2188,7 @@ uint16_t CPU::execute()
         // Subtracts A and carry flag from A
         // Flags affected: C, N, P, H, Z, S
 
-        clockCycles += alu->sub8(&(mainBank.af), true, &(mainBank.af), true, true);
+        clockCycles += alu->sub8(&(mainBank.af.bytes.H), mainBank.af.bytes.H, true);
         break;
     }
 
@@ -2190,7 +2198,7 @@ uint16_t CPU::execute()
         // AND operation from B to A
         // Flags affected: C, N, P, H, Z, S
 
-        clockCycles += alu->and8(&(mainBank.af), true, &(mainBank.bc), true);
+        clockCycles += alu->and8(&(mainBank.af.bytes.H), mainBank.bc.bytes.H);
         break;
     }
 
@@ -2200,7 +2208,7 @@ uint16_t CPU::execute()
         // AND operation from C to A
         // Flags affected: C, N, P, H, Z, S
 
-        clockCycles += alu->and8(&(mainBank.af), true, &(mainBank.bc), false);
+        clockCycles += alu->and8(&(mainBank.af.bytes.H), mainBank.bc.bytes.L);
         break;
     }
 
@@ -2210,7 +2218,7 @@ uint16_t CPU::execute()
         // AND operation from D to A
         // Flags affected: C, N, P, H, Z, S
 
-        clockCycles += alu->and8(&(mainBank.af), true, &(mainBank.de), true);
+        clockCycles += alu->and8(&(mainBank.af.bytes.H), mainBank.de.bytes.H);
         break;
     }
 
@@ -2220,7 +2228,7 @@ uint16_t CPU::execute()
         // AND operation from E to A
         // Flags affected: C, N, P, H, Z, S
 
-        clockCycles += alu->and8(&(mainBank.af), true, &(mainBank.de), false);
+        clockCycles += alu->and8(&(mainBank.af.bytes.H), mainBank.de.bytes.L);
         break;
     }
 
@@ -2230,7 +2238,7 @@ uint16_t CPU::execute()
         // AND operation from H to A
         // Flags affected: C, N, P, H, Z, S
 
-        clockCycles += alu->and8(&(mainBank.af), true, &(mainBank.hl), true);
+        clockCycles += alu->and8(&(mainBank.af.bytes.H), mainBank.hl.bytes.H);
         break;
     }
 
@@ -2240,7 +2248,7 @@ uint16_t CPU::execute()
         // AND operation L to A
         // Flags affected: C, N, P, H, Z, S
 
-        clockCycles += alu->and8(&(mainBank.af), true, &(mainBank.hl), false);
+        clockCycles += alu->and8(&(mainBank.af.bytes.H), mainBank.hl.bytes.L);
         break;
     }
 
@@ -2251,7 +2259,7 @@ uint16_t CPU::execute()
         // Flags affected: C, N, P, H, Z, S
 
         char value = (char)memory->peek(mainBank.hl.value);
-        clockCycles += alu->and8(&(mainBank.af), true, value) + 3;
+        clockCycles += alu->and8(&(mainBank.af.bytes.H), value) + 3;
         break;
     }
 
@@ -2261,7 +2269,7 @@ uint16_t CPU::execute()
         // AND operation from A to A
         // Flags affected: C, N, P, H, Z, S
 
-        clockCycles += alu->and8(&(mainBank.af), true, &(mainBank.af), true);
+        clockCycles += alu->and8(&(mainBank.af.bytes.H), mainBank.af.bytes.H);
         break;
     }
 
@@ -2271,7 +2279,7 @@ uint16_t CPU::execute()
         // XOR operation from B to A
         // Flags affected: C, N, P, H, Z, S
 
-        clockCycles += alu->xor8(&(mainBank.af), true, &(mainBank.bc), true);
+        clockCycles += alu->xor8(&(mainBank.af.bytes.H), mainBank.bc.bytes.H);
         break;
     }
 
@@ -2281,7 +2289,7 @@ uint16_t CPU::execute()
         // XOR operation from C to A
         // Flags affected: C, N, P, H, Z, S
 
-        clockCycles += alu->xor8(&(mainBank.af), true, &(mainBank.bc), false);
+        clockCycles += alu->xor8(&(mainBank.af.bytes.H), mainBank.bc.bytes.L);
         break;
     }
 
@@ -2291,7 +2299,7 @@ uint16_t CPU::execute()
         // XOR operation from D to A
         // Flags affected: C, N, P, H, Z, S
 
-        clockCycles += alu->xor8(&(mainBank.af), true, &(mainBank.de), true);
+        clockCycles += alu->xor8(&(mainBank.af.bytes.H), mainBank.de.bytes.H);
         break;
     }
 
@@ -2301,7 +2309,7 @@ uint16_t CPU::execute()
         // XOR operation from E to A
         // Flags affected: C, N, P, H, Z, S
 
-        clockCycles += alu->xor8(&(mainBank.af), true, &(mainBank.de), false);
+        clockCycles += alu->xor8(&(mainBank.af.bytes.H), mainBank.de.bytes.L);
         break;
     }
 
@@ -2311,7 +2319,7 @@ uint16_t CPU::execute()
         // XOR operation from H to A
         // Flags affected: C, N, P, H, Z, S
 
-        clockCycles += alu->xor8(&(mainBank.af), true, &(mainBank.hl), true);
+        clockCycles += alu->xor8(&(mainBank.af.bytes.H), mainBank.hl.bytes.H);
         break;
     }
 
@@ -2321,7 +2329,7 @@ uint16_t CPU::execute()
         // XOR operation L to A
         // Flags affected: C, N, P, H, Z, S
 
-        clockCycles += alu->xor8(&(mainBank.af), true, &(mainBank.hl), false);
+        clockCycles += alu->xor8(&(mainBank.af.bytes.H), mainBank.hl.bytes.L);
         break;
     }
 
@@ -2332,7 +2340,7 @@ uint16_t CPU::execute()
         // Flags affected: C, N, P, H, Z, S
 
         char value = (char)memory->peek(mainBank.hl.value);
-        clockCycles += alu->xor8(&(mainBank.af), true, value) + 3;
+        clockCycles += alu->xor8(&(mainBank.af.bytes.H), value) + 3;
         break;
     }
 
@@ -2342,7 +2350,7 @@ uint16_t CPU::execute()
         // XOR operation from A to A
         // Flags affected: C, N, P, H, Z, S
 
-        clockCycles += alu->xor8(&(mainBank.af), true, &(mainBank.af), true);
+        clockCycles += alu->xor8(&(mainBank.af.bytes.H), mainBank.af.bytes.H);
         break;
     }
 
@@ -2352,7 +2360,7 @@ uint16_t CPU::execute()
         // OR operation from B to A
         // Flags affected: C, N, P, H, Z, S
 
-        clockCycles += alu->or8(&(mainBank.af), true, &(mainBank.bc), true);
+        clockCycles += alu->or8(&(mainBank.af.bytes.H), mainBank.bc.bytes.H);
         break;
     }
 
@@ -2362,7 +2370,7 @@ uint16_t CPU::execute()
         // OR operation from C to A
         // Flags affected: C, N, P, H, Z, S
 
-        clockCycles += alu->or8(&(mainBank.af), true, &(mainBank.bc), false);
+        clockCycles += alu->or8(&(mainBank.af.bytes.H), mainBank.bc.bytes.L);
         break;
     }
 
@@ -2372,7 +2380,7 @@ uint16_t CPU::execute()
         // OR operation from D to A
         // Flags affected: C, N, P, H, Z, S
 
-        clockCycles += alu->or8(&(mainBank.af), true, &(mainBank.de), true);
+        clockCycles += alu->or8(&(mainBank.af.bytes.H), mainBank.de.bytes.H);
         break;
     }
 
@@ -2382,7 +2390,7 @@ uint16_t CPU::execute()
         // OR operation from E to A
         // Flags affected: C, N, P, H, Z, S
 
-        clockCycles += alu->or8(&(mainBank.af), true, &(mainBank.de), false);
+        clockCycles += alu->or8(&(mainBank.af.bytes.H), mainBank.de.bytes.L);
         break;
     }
 
@@ -2392,7 +2400,7 @@ uint16_t CPU::execute()
         // OR operation from H to A
         // Flags affected: C, N, P, H, Z, S
 
-        clockCycles += alu->or8(&(mainBank.af), true, &(mainBank.hl), true);
+        clockCycles += alu->or8(&(mainBank.af.bytes.H), mainBank.hl.bytes.H);
         break;
     }
 
@@ -2402,7 +2410,7 @@ uint16_t CPU::execute()
         // OR operation from L to A
         // Flags affected: C, N, P, H, Z, S
 
-        clockCycles += alu->or8(&(mainBank.af), true, &(mainBank.hl), false);
+        clockCycles += alu->or8(&(mainBank.af.bytes.H), mainBank.hl.bytes.L);
         break;
     }
 
@@ -2413,7 +2421,7 @@ uint16_t CPU::execute()
         // Flags affected: C, N, P, H, Z, S
 
         char value = (char)memory->peek(mainBank.hl.value);
-        clockCycles += alu->or8(&(mainBank.af), true, value) + 3;
+        clockCycles += alu->or8(&(mainBank.af.bytes.H), value) + 3;
         break;
     }
 
@@ -2423,7 +2431,7 @@ uint16_t CPU::execute()
         // OR operation from A to A
         // Flags affected: C, N, P, H, Z, S
 
-        clockCycles += alu->or8(&(mainBank.af), true, &(mainBank.af), true);
+        clockCycles += alu->or8(&(mainBank.af.bytes.H), mainBank.af.bytes.H);
         break;
     }
 
@@ -2433,7 +2441,7 @@ uint16_t CPU::execute()
         // Change flags according subtraction between B and A without by modifying A
         // Flags affected: C, N, P, H, Z, S
 
-        clockCycles += alu->cp8(&(mainBank.af), true, &(mainBank.bc), true);
+        clockCycles += alu->cp8(mainBank.af.bytes.H, mainBank.bc.bytes.H);
         break;
     }
 
@@ -2443,7 +2451,7 @@ uint16_t CPU::execute()
         // Change flags according subtraction between C and A without by modifying A
         // Flags affected: C, N, P, H, Z, S
 
-        clockCycles += alu->cp8(&(mainBank.af), true, &(mainBank.bc), false);
+        clockCycles += alu->cp8(mainBank.af.bytes.H, mainBank.bc.bytes.L);
         break;
     }
 
@@ -2453,7 +2461,7 @@ uint16_t CPU::execute()
         // Change flags according subtraction between D and A without by modifying A
         // Flags affected: C, N, P, H, Z, S
 
-        clockCycles += alu->cp8(&(mainBank.af), true, &(mainBank.de), true);
+        clockCycles += alu->cp8(mainBank.af.bytes.H, mainBank.de.bytes.H);
         break;
     }
 
@@ -2463,7 +2471,7 @@ uint16_t CPU::execute()
         // Change flags according subtraction between E and A without by modifying A
         // Flags affected: C, N, P, H, Z, S
 
-        clockCycles += alu->cp8(&(mainBank.af), true, &(mainBank.de), false);
+        clockCycles += alu->cp8(mainBank.af.bytes.H, mainBank.de.bytes.L);
         break;
     }
 
@@ -2473,7 +2481,7 @@ uint16_t CPU::execute()
         // Change flags according subtraction between H and A without by modifying A
         // Flags affected: C, N, P, H, Z, S
 
-        clockCycles += alu->cp8(&(mainBank.af), true, &(mainBank.hl), true);
+        clockCycles += alu->cp8(mainBank.af.bytes.H, mainBank.hl.bytes.H);
         break;
     }
 
@@ -2483,7 +2491,7 @@ uint16_t CPU::execute()
         // Change flags according subtraction between L and A without by modifying A
         // Flags affected: C, N, P, H, Z, S
 
-        clockCycles += alu->cp8(&(mainBank.af), true, &(mainBank.hl), false);
+        clockCycles += alu->cp8(mainBank.af.bytes.H, mainBank.hl.bytes.L);
         break;
     }
 
@@ -2494,7 +2502,7 @@ uint16_t CPU::execute()
         // Flags affected: C, N, P, H, Z, S
 
         char value = (char)memory->peek(mainBank.hl.value);
-        clockCycles += alu->cp8(&(mainBank.af), true, value) + 3;
+        clockCycles += alu->cp8(mainBank.af.bytes.H, value) + 3;
         break;
     }
 
@@ -2504,7 +2512,7 @@ uint16_t CPU::execute()
         // Change flags according subtraction between A and A without by modifying A
         // Flags affected: C, N, P, H, Z, S
 
-        clockCycles += alu->cp8(&(mainBank.af), true, &(mainBank.af), true);
+        clockCycles += alu->cp8(mainBank.af.bytes.H, mainBank.af.bytes.H);
         break;
     }
 
@@ -2582,7 +2590,7 @@ uint16_t CPU::execute()
         // Flags affected: C, N, P, H, Z, S
 
         char value = (char)memory->peek(pc.value++);
-        clockCycles += alu->add8(&(mainBank.af), true, value);
+        clockCycles += alu->add8(&(mainBank.af.bytes.H), value);
 
         clockCycles += 3;
         break;
@@ -2634,9 +2642,7 @@ uint16_t CPU::execute()
     {
         // 203: BITS instructions
 
-        // TODO
-        // Implement bits operation (rotate, shift...)
-
+        clockCycles += executeBitOperation();
         break;
     }
 
@@ -2668,7 +2674,7 @@ uint16_t CPU::execute()
         // Flags affected: C, N, P, H, Z, S
 
         char value = (char)memory->peek(pc.value++);
-        clockCycles += alu->add8(&(mainBank.af), true, value, true) + 3;
+        clockCycles += alu->add8(&(mainBank.af.bytes.H), value, true) + 3;
 
         break;
     }
@@ -2721,13 +2727,9 @@ uint16_t CPU::execute()
         // Write value of A to port **
         // Flags affected: None
 
-        pc.value++;
+        devices->write((mainBank.af.bytes.H << 8) + memory->peek(pc.value++), mainBank.af.bytes.H);
 
         clockCycles += 11;
-
-        // TODO
-        // Implement ports
-
         break;
     }
 
@@ -2763,7 +2765,7 @@ uint16_t CPU::execute()
         // Flags affected: C, N, P, H, Z, S
 
         char value = (char)memory->peek(pc.value++);
-        clockCycles += alu->sub8(&(mainBank.af), true, value);
+        clockCycles += alu->sub8(&(mainBank.af.bytes.H), value);
 
         clockCycles += 3;
         break;
@@ -2827,6 +2829,8 @@ uint16_t CPU::execute()
         // A byte from a port N is written to register A
         // Flags affected: None
 
+        mainBank.af.bytes.H = devices->read((mainBank.af.bytes.H << 8) + memory->peek(pc.value++));
+
         clockCycles += 11;
         break;
     }
@@ -2845,9 +2849,7 @@ uint16_t CPU::execute()
 
     case 0xDD:
     {
-        // TODO
-        // Implement IX Instructions
-
+        clockCycles += executeIRInstruction(&iX);
         break;
     }
 
@@ -2858,8 +2860,8 @@ uint16_t CPU::execute()
         // Flags affected: C, N, P, H, Z, S
 
         auto value = memory->peek(pc.value++);
-        clockCycles += alu->sub8(&(mainBank.af), true, value, true) + 3;
-        
+        clockCycles += alu->sub8(&(mainBank.af.bytes.H), value, true) + 3;
+
         break;
     }
 
@@ -2950,7 +2952,7 @@ uint16_t CPU::execute()
         // AND operation A to A
         // Flags affected: C, N, P, H, Z, S
 
-        clockCycles += alu->and8(&(mainBank.af), true, memory->peek(pc.value++)) + 3;
+        clockCycles += alu->and8(&(mainBank.af.bytes.H), memory->peek(pc.value++)) + 3;
         break;
     }
 
@@ -2980,7 +2982,7 @@ uint16_t CPU::execute()
         // Set PC value to contents of memory pointed by HL register
         // Flags affected: None
 
-        auto address = memory->peek(mainBank.hl.value) + (memory->peek(mainBank.hl.value + 1) << 8);        
+        auto address = memory->peek(mainBank.hl.value) + (memory->peek(mainBank.hl.value + 1) << 8);
         pc.value = address;
 
         clockCycles += 10;
@@ -3037,7 +3039,7 @@ uint16_t CPU::execute()
         // Flags affected: C, N, P, H, Z, S
 
         auto value = memory->peek(pc.value++) + (memory->peek(pc.value++) << 8);
-        clockCycles += alu->xor8(&(mainBank.af), true, value) + 3;
+        clockCycles += alu->xor8(&(mainBank.af.bytes.H), value) + 3;
         break;
     }
 
@@ -3127,7 +3129,7 @@ uint16_t CPU::execute()
         // Flags affected: C, N, P, H, Z, S
 
         auto value = memory->peek(pc.value++) + (memory->peek(pc.value++) << 8);
-        clockCycles += alu->or8(&(mainBank.af), true, value) + 3;        
+        clockCycles += alu->or8(&(mainBank.af.bytes.H), value) + 3;
         break;
     }
 
@@ -3197,8 +3199,9 @@ uint16_t CPU::execute()
     }
 
     case 0xFD:
-    {
-        // TODO: Implement IY Instructions
+    {        
+        clockCycles += executeIRInstruction(&iY);
+        break;
     }
 
     case 0xFE:
@@ -3207,8 +3210,7 @@ uint16_t CPU::execute()
         // Change flags according subtraction between ** and A without modifying A
         // Flags affected: C, N, P, H, Z, S
 
-        clockCycles += alu->cp8(&(mainBank.af), true, memory->peek(pc.value++));
-        clockCycles += 3;
+        clockCycles += alu->cp8(mainBank.af.bytes.H, memory->peek(pc.value++)) + 3;
         break;
     }
 
@@ -3229,6 +3231,928 @@ uint16_t CPU::execute()
     }
 
     return 0;
+}
+
+/**
+ * @brief Execute instruction pointed by PC register after a 0xCB operation (bit operation)
+ *
+ * @return uint16_t number of cycles
+ */
+uint16_t CPU::executeBitOperation()
+{
+    auto opcode = memory->peek(pc.value++);
+
+    switch(opcode)
+    {
+    case 0x00:
+        return alu->rlc(&(mainBank.bc.bytes.H));
+    case 0x01:
+        return alu->rlc(&(mainBank.bc.bytes.L));
+    case 0x02:
+        return alu->rlc(&(mainBank.de.bytes.H));
+    case 0x03:
+        return alu->rlc(&(mainBank.de.bytes.L));
+    case 0x04:
+        return alu->rlc(&(mainBank.hl.bytes.H));
+    case 0x05:
+        return alu->rlc(&(mainBank.hl.bytes.H));
+    case 0x06:
+    {
+        auto value = memory->peek(pc.value);
+        auto cc = alu->rlc(&value);
+        memory->poke(pc.value++, value);
+        return cc;
+    }
+    case 0x07:
+        return alu->rlc(&(mainBank.af.bytes.H));
+    case 0x08:
+        return alu->rrc(&(mainBank.bc.bytes.H));
+    case 0x09:
+        return alu->rrc(&(mainBank.bc.bytes.L));
+    case 0x0A:
+        return alu->rrc(&(mainBank.de.bytes.H));
+    case 0x0B:
+        return alu->rrc(&(mainBank.de.bytes.L));
+    case 0x0C:
+        return alu->rrc(&(mainBank.hl.bytes.H));
+    case 0x0D:
+        return alu->rrc(&(mainBank.hl.bytes.L));
+    case 0x0E:
+    {
+        auto value = memory->peek(pc.value);
+        auto cc = alu->rlc(&value);
+        memory->poke(pc.value++, value);
+        return cc;
+    }
+    case 0x0F:
+        return alu->rrc(&(mainBank.af.bytes.H));
+    case 0x10:
+        return alu->rl(&(mainBank.bc.bytes.H));
+    case 0x11:
+        return alu->rl(&(mainBank.bc.bytes.L));
+    case 0x12:
+        return alu->rl(&(mainBank.de.bytes.H));
+    case 0x13:
+        return alu->rl(&(mainBank.de.bytes.L));
+    case 0x14:
+        return alu->rl(&(mainBank.hl.bytes.H));
+    case 0x15:
+        return alu->rl(&(mainBank.hl.bytes.L));
+    case 0x16:
+    {
+        auto value = memory->peek(pc.value);
+        auto cc = alu->rl(&value);
+        memory->poke(pc.value++, value);
+        return cc;
+    }
+    case 0x17:
+        return alu->rl(&(mainBank.af.bytes.H));
+    case 0x18:
+        return alu->rr(&(mainBank.bc.bytes.H));
+    case 0x19:
+        return alu->rr(&(mainBank.bc.bytes.L));
+    case 0x1A:
+        return alu->rr(&(mainBank.de.bytes.H));
+    case 0x1B:
+        return alu->rr(&(mainBank.de.bytes.L));
+    case 0x1C:
+        return alu->rr(&(mainBank.hl.bytes.H));
+    case 0x1D:
+        return alu->rr(&(mainBank.hl.bytes.L));
+    case 0x1E:
+    {
+        auto value = memory->peek(pc.value);
+        auto cc = alu->rr(&value);
+        memory->poke(pc.value++, value);
+        return cc;
+    }
+    case 0x1F:
+        return alu->sla(&(mainBank.af.bytes.H));
+    case 0x20:
+        return alu->sla(&(mainBank.bc.bytes.H));
+    case 0x21:
+        return alu->sla(&(mainBank.bc.bytes.L));
+    case 0x22:
+        return alu->sla(&(mainBank.de.bytes.H));
+    case 0x23:
+        return alu->sla(&(mainBank.de.bytes.L));
+    case 0x24:
+        return alu->sla(&(mainBank.hl.bytes.H));
+    case 0x25:
+        return alu->sla(&(mainBank.hl.bytes.L));
+    case 0x26:
+    {
+        auto value = memory->peek(pc.value);
+        auto cc = alu->sla(&value);
+        memory->poke(pc.value++, value);
+        return cc;
+    }
+    case 0x27:
+        return alu->sla(&(mainBank.af.bytes.H));
+    case 0x28:
+        return alu->sra(&(mainBank.bc.bytes.H));
+    case 0x29:
+        return alu->sra(&(mainBank.bc.bytes.L));
+    case 0x2A:
+        return alu->sra(&(mainBank.de.bytes.H));
+    case 0x2B:
+        return alu->sra(&(mainBank.de.bytes.L));
+    case 0x2C:
+        return alu->sra(&(mainBank.hl.bytes.H));
+    case 0x2D:
+        return alu->sra(&(mainBank.hl.bytes.L));
+    case 0x2E:
+    {
+        auto value = memory->peek(pc.value);
+        auto cc = alu->sra(&value);
+        memory->poke(pc.value++, value);
+        return cc;
+    }
+    case 0x2F:
+        return alu->sra(&(mainBank.af.bytes.H));
+    case 0x30:
+        return alu->sll(&(mainBank.bc.bytes.H));
+    case 0x31:
+        return alu->sll(&(mainBank.bc.bytes.L));
+    case 0x32:
+        return alu->sll(&(mainBank.de.bytes.H));
+    case 0x33:
+        return alu->sll(&(mainBank.de.bytes.L));
+    case 0x34:
+        return alu->sll(&(mainBank.hl.bytes.H));
+    case 0x35:
+        return alu->sll(&(mainBank.hl.bytes.L));
+    case 0x36:
+    {
+        auto value = memory->peek(pc.value);
+        auto cc = alu->sla(&value);
+        memory->poke(pc.value++, value);
+        return cc;
+    }
+    case 0x37:
+        return alu->sll(&(mainBank.af.bytes.H));
+    case 0x38:
+        return alu->srl(&(mainBank.bc.bytes.H));
+    case 0x39:
+        return alu->srl(&(mainBank.bc.bytes.L));
+    case 0x3A:
+        return alu->srl(&(mainBank.de.bytes.H));
+    case 0x3B:
+        return alu->srl(&(mainBank.de.bytes.L));
+    case 0x3C:
+        return alu->srl(&(mainBank.hl.bytes.H));
+    case 0x3D:
+        return alu->srl(&(mainBank.hl.bytes.L));
+    case 0x3E:
+    {
+        auto value = memory->peek(pc.value);
+        auto cc = alu->srl(&value);
+        memory->poke(pc.value++, value);
+        return cc;
+    }
+    case 0x3F:
+        return alu->srl(&(mainBank.af.bytes.H));
+    case 0x40:
+        return alu->bit(&(mainBank.bc.bytes.H), 0);
+    case 0x41:
+        return alu->bit(&(mainBank.bc.bytes.L), 0);
+    case 0x42:
+        return alu->bit(&(mainBank.de.bytes.H), 0);
+    case 0x43:
+        return alu->bit(&(mainBank.de.bytes.L), 0);
+    case 0x44:
+        return alu->bit(&(mainBank.hl.bytes.H), 0);
+    case 0x45:
+        return alu->bit(&(mainBank.hl.bytes.L), 0);
+    case 0x46:
+    {
+        auto value = memory->peek(pc.value);
+        auto cc = alu->bit(&value, 0);
+        memory->poke(pc.value++, value);
+        return cc + 4;
+    }
+    case 0x47:
+        return alu->bit(&(mainBank.af.bytes.H), 1);
+    case 0x48:
+        return alu->bit(&(mainBank.bc.bytes.H), 1);
+    case 0x49:
+        return alu->bit(&(mainBank.bc.bytes.L), 1);
+    case 0x4A:
+        return alu->bit(&(mainBank.de.bytes.H), 1);
+    case 0x4B:
+        return alu->bit(&(mainBank.de.bytes.L), 1);
+    case 0x4C:
+        return alu->bit(&(mainBank.hl.bytes.H), 1);
+    case 0x4D:
+        return alu->bit(&(mainBank.hl.bytes.L), 1);
+    case 0x4E:
+    {
+        auto value = memory->peek(pc.value);
+        auto cc = alu->bit(&value, 1);
+        memory->poke(pc.value++, value);
+        return cc + 4;
+    }
+    case 0x4F:
+        return alu->bit(&(mainBank.af.bytes.H), 1);
+    case 0x50:
+        return alu->bit(&(mainBank.bc.bytes.H), 2);
+    case 0x51:
+        return alu->bit(&(mainBank.bc.bytes.L), 2);
+    case 0x52:
+        return alu->bit(&(mainBank.de.bytes.H), 2);
+    case 0x53:
+        return alu->bit(&(mainBank.de.bytes.L), 2);
+    case 0x54:
+        return alu->bit(&(mainBank.hl.bytes.H), 2);
+    case 0x55:
+        return alu->bit(&(mainBank.hl.bytes.L), 2);
+    case 0x56:
+    {
+        auto value = memory->peek(pc.value);
+        auto cc = alu->bit(&value, 2);
+        memory->poke(pc.value++, value);
+        return cc + 4;
+    }
+    case 0x57:
+        return alu->bit(&(mainBank.af.bytes.H), 3);
+    case 0x58:
+        return alu->bit(&(mainBank.bc.bytes.H), 3);
+    case 0x59:
+        return alu->bit(&(mainBank.bc.bytes.L), 3);
+    case 0x5A:
+        return alu->bit(&(mainBank.de.bytes.H), 3);
+    case 0x5B:
+        return alu->bit(&(mainBank.de.bytes.L), 3);
+    case 0x5C:
+        return alu->bit(&(mainBank.hl.bytes.H), 3);
+    case 0x5D:
+        return alu->bit(&(mainBank.hl.bytes.L), 3);
+    case 0x5E:
+    {
+        auto value = memory->peek(pc.value);
+        auto cc = alu->bit(&value, 3);
+        memory->poke(pc.value++, value);
+        return cc + 4;
+    }
+    case 0x5F:
+        return alu->bit(&(mainBank.af.bytes.H), 3);
+    case 0x60:
+        return alu->bit(&(mainBank.bc.bytes.H), 4);
+    case 0x61:
+        return alu->bit(&(mainBank.bc.bytes.L), 4);
+    case 0x62:
+        return alu->bit(&(mainBank.de.bytes.H), 4);
+    case 0x63:
+        return alu->bit(&(mainBank.de.bytes.L), 4);
+    case 0x64:
+        return alu->bit(&(mainBank.hl.bytes.H), 4);
+    case 0x65:
+        return alu->bit(&(mainBank.hl.bytes.L), 4);
+    case 0x66:
+    {
+        auto value = memory->peek(pc.value);
+        auto cc = alu->bit(&value, 4);
+        memory->poke(pc.value++, value);
+        return cc + 4;
+    }
+    case 0x67:
+        return alu->bit(&(mainBank.af.bytes.H), 5);
+    case 0x68:
+        return alu->bit(&(mainBank.bc.bytes.H), 5);
+    case 0x69:
+        return alu->bit(&(mainBank.bc.bytes.L), 5);
+    case 0x6A:
+        return alu->bit(&(mainBank.de.bytes.H), 5);
+    case 0x6B:
+        return alu->bit(&(mainBank.de.bytes.L), 5);
+    case 0x6C:
+        return alu->bit(&(mainBank.hl.bytes.H), 5);
+    case 0x6D:
+        return alu->bit(&(mainBank.hl.bytes.L), 5);
+    case 0x6E:
+    {
+        auto value = memory->peek(pc.value);
+        auto cc = alu->bit(&value, 5);
+        memory->poke(pc.value++, value);
+        return cc + 4;
+    }
+    case 0x6F:
+        return alu->bit(&(mainBank.af.bytes.H), 5);
+    case 0x70:
+        return alu->bit(&(mainBank.bc.bytes.H), 6);
+    case 0x71:
+        return alu->bit(&(mainBank.bc.bytes.L), 6);
+    case 0x72:
+        return alu->bit(&(mainBank.de.bytes.H), 6);
+    case 0x73:
+        return alu->bit(&(mainBank.de.bytes.L), 6);
+    case 0x74:
+        return alu->bit(&(mainBank.hl.bytes.H), 6);
+    case 0x75:
+        return alu->bit(&(mainBank.hl.bytes.L), 6);
+    case 0x76:
+    {
+        auto value = memory->peek(pc.value);
+        auto cc = alu->bit(&value, 6);
+        memory->poke(pc.value++, value);
+        return cc + 4;
+    }
+    case 0x77:
+        return alu->bit(&(mainBank.af.bytes.H), 7);
+    case 0x78:
+        return alu->bit(&(mainBank.bc.bytes.H), 7);
+    case 0x79:
+        return alu->bit(&(mainBank.bc.bytes.L), 7);
+    case 0x7A:
+        return alu->bit(&(mainBank.de.bytes.H), 7);
+    case 0x7B:
+        return alu->bit(&(mainBank.de.bytes.L), 7);
+    case 0x7C:
+        return alu->bit(&(mainBank.hl.bytes.H), 7);
+    case 0x7D:
+        return alu->bit(&(mainBank.hl.bytes.L), 7);
+    case 0x7E:
+    {
+        auto value = memory->peek(pc.value);
+        auto cc = alu->bit(&value, 1);
+        memory->poke(pc.value++, value);
+        return cc + 4;
+    }
+    case 0x7F:
+        return alu->bit(&(mainBank.af.bytes.H), 7);
+    case 0x80:
+        return alu->res(&(mainBank.bc.bytes.H), 0);
+    case 0x81:
+        return alu->res(&(mainBank.bc.bytes.L), 0);
+    case 0x82:
+        return alu->res(&(mainBank.de.bytes.H), 0);
+    case 0x83:
+        return alu->res(&(mainBank.de.bytes.L), 0);
+    case 0x84:
+        return alu->res(&(mainBank.hl.bytes.H), 0);
+    case 0x85:
+        return alu->res(&(mainBank.hl.bytes.L), 0);
+    case 0x86:
+    {
+        auto value = memory->peek(pc.value);
+        auto cc = alu->res(&value, 0);
+        memory->poke(pc.value++, value);
+        return cc + 7;
+    }
+    case 0x87:
+        return alu->res(&(mainBank.af.bytes.H), 1);
+    case 0x88:
+        return alu->res(&(mainBank.bc.bytes.H), 1);
+    case 0x89:
+        return alu->res(&(mainBank.bc.bytes.L), 1);
+    case 0x8A:
+        return alu->res(&(mainBank.de.bytes.H), 1);
+    case 0x8B:
+        return alu->res(&(mainBank.de.bytes.L), 1);
+    case 0x8C:
+        return alu->res(&(mainBank.hl.bytes.H), 1);
+    case 0x8D:
+        return alu->res(&(mainBank.hl.bytes.L), 1);
+    case 0x8E:
+    {
+        auto value = memory->peek(pc.value);
+        auto cc = alu->res(&value, 1);
+        memory->poke(pc.value++, value);
+        return cc + 7;
+    }
+    case 0x8F:
+        return alu->res(&(mainBank.af.bytes.H), 1);
+    case 0x90:
+        return alu->res(&(mainBank.bc.bytes.H), 2);
+    case 0x91:
+        return alu->res(&(mainBank.bc.bytes.L), 2);
+    case 0x92:
+        return alu->res(&(mainBank.de.bytes.H), 2);
+    case 0x93:
+        return alu->res(&(mainBank.de.bytes.L), 2);
+    case 0x94:
+        return alu->res(&(mainBank.hl.bytes.H), 2);
+    case 0x95:
+        return alu->res(&(mainBank.hl.bytes.L), 2);
+    case 0x96:
+    {
+        auto value = memory->peek(pc.value);
+        auto cc = alu->res(&value, 2);
+        memory->poke(pc.value++, value);
+        return cc + 7;
+    }
+    case 0x97:
+        return alu->res(&(mainBank.af.bytes.H), 3);
+    case 0x98:
+        return alu->res(&(mainBank.bc.bytes.H), 3);
+    case 0x99:
+        return alu->res(&(mainBank.bc.bytes.L), 3);
+    case 0x9A:
+        return alu->res(&(mainBank.de.bytes.H), 3);
+    case 0x9B:
+        return alu->res(&(mainBank.de.bytes.L), 3);
+    case 0x9C:
+        return alu->res(&(mainBank.hl.bytes.H), 3);
+    case 0x9D:
+        return alu->res(&(mainBank.hl.bytes.L), 3);
+    case 0x9E:
+    {
+        auto value = memory->peek(pc.value);
+        auto cc = alu->res(&value, 3);
+        memory->poke(pc.value++, value);
+        return cc + 7;
+    }
+    case 0x9F:
+        return alu->res(&(mainBank.af.bytes.H), 3);
+    case 0xA0:
+        return alu->res(&(mainBank.bc.bytes.H), 4);
+    case 0xA1:
+        return alu->res(&(mainBank.bc.bytes.L), 4);
+    case 0xA2:
+        return alu->res(&(mainBank.de.bytes.H), 4);
+    case 0xA3:
+        return alu->res(&(mainBank.de.bytes.L), 4);
+    case 0xA4:
+        return alu->res(&(mainBank.hl.bytes.H), 4);
+    case 0xA5:
+        return alu->res(&(mainBank.hl.bytes.L), 4);
+    case 0xA6:
+    {
+        auto value = memory->peek(pc.value);
+        auto cc = alu->res(&value, 4);
+        memory->poke(pc.value++, value);
+        return cc + 7;
+    }
+    case 0xA7:
+        return alu->res(&(mainBank.af.bytes.H), 5);
+    case 0xA8:
+        return alu->res(&(mainBank.bc.bytes.H), 5);
+    case 0xA9:
+        return alu->res(&(mainBank.bc.bytes.L), 5);
+    case 0xAA:
+        return alu->res(&(mainBank.de.bytes.H), 5);
+    case 0xAB:
+        return alu->res(&(mainBank.de.bytes.L), 5);
+    case 0xAC:
+        return alu->res(&(mainBank.hl.bytes.H), 5);
+    case 0xAD:
+        return alu->res(&(mainBank.hl.bytes.L), 5);
+    case 0xAE:
+    {
+        auto value = memory->peek(pc.value);
+        auto cc = alu->res(&value, 5);
+        memory->poke(pc.value++, value);
+        return cc + 7;
+    }
+    case 0xAF:
+        return alu->res(&(mainBank.af.bytes.H), 5);
+    case 0xB0:
+        return alu->res(&(mainBank.bc.bytes.H), 6);
+    case 0xB1:
+        return alu->res(&(mainBank.bc.bytes.L), 6);
+    case 0xB2:
+        return alu->res(&(mainBank.de.bytes.H), 6);
+    case 0xB3:
+        return alu->res(&(mainBank.de.bytes.L), 6);
+    case 0xB4:
+        return alu->res(&(mainBank.hl.bytes.H), 6);
+    case 0xB5:
+        return alu->res(&(mainBank.hl.bytes.L), 6);
+    case 0xB6:
+    {
+        auto value = memory->peek(pc.value);
+        auto cc = alu->res(&value, 6);
+        memory->poke(pc.value++, value);
+        return cc + 7;
+    }
+    case 0xB7:
+        return alu->res(&(mainBank.af.bytes.H), 7);
+    case 0xB8:
+        return alu->res(&(mainBank.bc.bytes.H), 7);
+    case 0xB9:
+        return alu->res(&(mainBank.bc.bytes.L), 7);
+    case 0xBA:
+        return alu->res(&(mainBank.de.bytes.H), 7);
+    case 0xBB:
+        return alu->res(&(mainBank.de.bytes.L), 7);
+    case 0xBC:
+        return alu->res(&(mainBank.hl.bytes.H), 7);
+    case 0xBD:
+        return alu->res(&(mainBank.hl.bytes.L), 7);
+    case 0xBE:
+    {
+        auto value = memory->peek(pc.value);
+        auto cc = alu->res(&value, 7);
+        memory->poke(pc.value++, value);
+        return cc + 7;
+    }
+    case 0xBF:
+        return alu->res(&(mainBank.af.bytes.H), 7);
+    case 0xC0:
+        return alu->set(&(mainBank.bc.bytes.H), 0);
+    case 0xC1:
+        return alu->set(&(mainBank.bc.bytes.L), 0);
+    case 0xC2:
+        return alu->set(&(mainBank.de.bytes.H), 0);
+    case 0xC3:
+        return alu->set(&(mainBank.de.bytes.L), 0);
+    case 0xC4:
+        return alu->set(&(mainBank.hl.bytes.H), 0);
+    case 0xC5:
+        return alu->set(&(mainBank.hl.bytes.L), 0);
+    case 0xC6:
+    {
+        auto value = memory->peek(pc.value);
+        auto cc = alu->set(&value, 0);
+        memory->poke(pc.value++, value);
+        return cc + 7;
+    }
+    case 0xC7:
+        return alu->set(&(mainBank.af.bytes.H), 1);
+    case 0xC8:
+        return alu->set(&(mainBank.bc.bytes.H), 1);
+    case 0xC9:
+        return alu->set(&(mainBank.bc.bytes.L), 1);
+    case 0xCA:
+        return alu->set(&(mainBank.de.bytes.H), 1);
+    case 0xCB:
+        return alu->set(&(mainBank.de.bytes.L), 1);
+    case 0xCC:
+        return alu->set(&(mainBank.hl.bytes.H), 1);
+    case 0xCD:
+        return alu->set(&(mainBank.hl.bytes.L), 1);
+    case 0xCE:
+    {
+        auto value = memory->peek(pc.value);
+        auto cc = alu->set(&value, 1);
+        memory->poke(pc.value++, value);
+        return cc + 7;
+    }
+    case 0xCF:
+        return alu->set(&(mainBank.af.bytes.H), 1);
+    case 0xD0:
+        return alu->set(&(mainBank.bc.bytes.H), 2);
+    case 0xD1:
+        return alu->set(&(mainBank.bc.bytes.L), 2);
+    case 0xD2:
+        return alu->set(&(mainBank.de.bytes.H), 2);
+    case 0xD3:
+        return alu->set(&(mainBank.de.bytes.L), 2);
+    case 0xD4:
+        return alu->set(&(mainBank.hl.bytes.H), 2);
+    case 0xD5:
+        return alu->set(&(mainBank.hl.bytes.L), 2);
+    case 0xD6:
+    {
+        auto value = memory->peek(pc.value);
+        auto cc = alu->set(&value, 2);
+        memory->poke(pc.value++, value);
+        return cc + 7;
+    }
+    case 0xD7:
+        return alu->set(&(mainBank.af.bytes.H), 3);
+    case 0xD8:
+        return alu->set(&(mainBank.bc.bytes.H), 3);
+    case 0xD9:
+        return alu->set(&(mainBank.bc.bytes.L), 3);
+    case 0xDA:
+        return alu->set(&(mainBank.de.bytes.H), 3);
+    case 0xDB:
+        return alu->set(&(mainBank.de.bytes.L), 3);
+    case 0xDC:
+        return alu->set(&(mainBank.hl.bytes.H), 3);
+    case 0xDD:
+        return alu->set(&(mainBank.hl.bytes.L), 3);
+    case 0xDE:
+    {
+        auto value = memory->peek(pc.value);
+        auto cc = alu->set(&value, 3);
+        memory->poke(pc.value++, value);
+        return cc + 7;
+    }
+    case 0xDF:
+        return alu->set(&(mainBank.af.bytes.H), 3);
+    case 0xE0:
+        return alu->set(&(mainBank.bc.bytes.H), 4);
+    case 0xE1:
+        return alu->set(&(mainBank.bc.bytes.L), 4);
+    case 0xE2:
+        return alu->set(&(mainBank.de.bytes.H), 4);
+    case 0xE3:
+        return alu->set(&(mainBank.de.bytes.L), 4);
+    case 0xE4:
+        return alu->set(&(mainBank.hl.bytes.H), 4);
+    case 0xE5:
+        return alu->set(&(mainBank.hl.bytes.L), 4);
+    case 0xE6:
+    {
+        auto value = memory->peek(pc.value);
+        auto cc = alu->set(&value, 4);
+        memory->poke(pc.value++, value);
+        return cc + 7;
+    }
+    case 0xE7:
+        return alu->set(&(mainBank.af.bytes.H), 5);
+    case 0xE8:
+        return alu->set(&(mainBank.bc.bytes.H), 5);
+    case 0xE9:
+        return alu->set(&(mainBank.bc.bytes.L), 5);
+    case 0xEA:
+        return alu->set(&(mainBank.de.bytes.H), 5);
+    case 0xEB:
+        return alu->set(&(mainBank.de.bytes.L), 5);
+    case 0xEC:
+        return alu->set(&(mainBank.hl.bytes.H), 5);
+    case 0xED:
+        return alu->set(&(mainBank.hl.bytes.L), 5);
+    case 0xEE:
+    {
+        auto value = memory->peek(pc.value);
+        auto cc = alu->set(&value, 5);
+        memory->poke(pc.value++, value);
+        return cc + 7;
+    }
+    case 0xEF:
+        return alu->set(&(mainBank.af.bytes.H), 5);
+    case 0xF0:
+        return alu->set(&(mainBank.bc.bytes.H), 6);
+    case 0xF1:
+        return alu->set(&(mainBank.bc.bytes.L), 6);
+    case 0xF2:
+        return alu->set(&(mainBank.de.bytes.H), 6);
+    case 0xF3:
+        return alu->set(&(mainBank.de.bytes.L), 6);
+    case 0xF4:
+        return alu->set(&(mainBank.hl.bytes.H), 6);
+    case 0xF5:
+        return alu->set(&(mainBank.hl.bytes.L), 6);
+    case 0xF6:
+    {
+        auto value = memory->peek(pc.value);
+        auto cc = alu->set(&value, 0);
+        memory->poke(pc.value++, value);
+        return cc + 7;
+    }
+    case 0xF7:
+        return alu->set(&(mainBank.af.bytes.H), 7);
+    case 0xF8:
+        return alu->set(&(mainBank.bc.bytes.H), 7);
+    case 0xF9:
+        return alu->set(&(mainBank.bc.bytes.L), 7);
+    case 0xFA:
+        return alu->set(&(mainBank.de.bytes.H), 7);
+    case 0xFB:
+        return alu->set(&(mainBank.de.bytes.L), 7);
+    case 0xFC:
+        return alu->set(&(mainBank.hl.bytes.H), 7);
+    case 0xFD:
+        return alu->set(&(mainBank.hl.bytes.L), 7);
+    case 0xFE:
+    {
+        auto value = memory->peek(pc.value);
+        auto cc = alu->set(&value, 7);
+        memory->poke(pc.value++, value);
+        return cc + 7;
+    }
+    case 0xFF:
+        return alu->set(&(mainBank.af.bytes.H), 7);
+    default:
+        return 0;
+    }
+}
+
+/**
+ * @brief Execute instruction pointed by PC register after a index operation (iX/iY instructions)
+ *
+ * @return uint16_t number of cycles
+ */
+uint16_t CPU::executeIRInstruction(Register* index)
+{
+    auto opcode = memory->peek(pc.value++);
+
+    switch(opcode)
+    {
+    case 0x09:
+        return alu->add16(index, &(mainBank.bc));
+    case 0x19:
+        return alu->add16(index, &(mainBank.de));
+    case 0x21:
+        return ld16reg(index);
+    case 0x22:
+        memory->poke(pc.value++, index->bytes.L);
+        memory->poke(pc.value++, index->bytes.H);
+        return 20;
+    case 0x23:
+        index->value += 1;
+        return 10;
+    case 0x29:
+        return alu->add16(index, index);
+    case 0x2A:
+        auto address = memory->peek(pc.value++) + (memory->peek(pc.value++) << 8);
+        index->bytes.L = memory->peek(address);
+        return 20;
+    case 0x2B:
+        index->value -= 1;
+        return 10;
+    case 0x34:
+        return inc8mem(index->value + memory->peek(pc.value++)) + 12;
+    case 0x35:
+        return dec8mem(index->value + memory->peek(pc.value++)) + 12;
+    case 0x36:
+        memory->poke(index->value + memory->peek(pc.value++), memory->peek(pc.value++));
+        return 19;
+    case 0x39:
+        return alu->add16(index, &sp);
+    case 0x46:
+        return ld8reg(&(mainBank.bc), true, index->value + memory->peek(pc.value++));
+    case 0x4E:
+        return ld8reg(&(mainBank.bc), false, index->value + memory->peek(pc.value++));
+    case 0x56:
+        return ld8reg(&(mainBank.de), true, index->value + memory->peek(pc.value++));
+    case 0x5E:
+        return ld8reg(&(mainBank.de), false, index->value + memory->peek(pc.value++));
+    case 0x66:
+        return ld8reg(&(mainBank.hl), true, index->value + memory->peek(pc.value++));
+    case 0x6E:
+        return ld8reg(&(mainBank.hl), false, index->value + memory->peek(pc.value++));
+    case 0x70:
+        memory->poke(index->value + memory->peek(pc.value++), mainBank.bc.bytes.H);
+        return 19;
+    case 0x71:
+        memory->poke(index->value + memory->peek(pc.value++), mainBank.bc.bytes.L);
+        return 19;
+    case 0x72:
+        memory->poke(index->value + memory->peek(pc.value++), mainBank.de.bytes.H);
+        return 19;
+    case 0x73:
+        memory->poke(index->value + memory->peek(pc.value++), mainBank.de.bytes.L);
+        return 19;
+    case 0x74:
+        memory->poke(index->value + memory->peek(pc.value++), mainBank.hl.bytes.H);
+        return 19;
+    case 0x75:
+        memory->poke(index->value + memory->peek(pc.value++), mainBank.hl.bytes.L);
+        return 19;
+    case 0x77:
+        memory->poke(index->value + memory->peek(pc.value++), mainBank.af.bytes.H);
+        return 19;
+    case 0x7E:
+        return ld8reg(&(mainBank.af), true, index->value + memory->peek(pc.value++));
+    case 0x86:
+        return alu->add8(&(mainBank.af.bytes.H), memory->peek(index->value + memory->peek(pc.value++)));
+    case 0x8E:
+        return alu->add8(&(mainBank.af.bytes.H), memory->peek(index->value + memory->peek(pc.value++)), true);
+    case 0x96:
+        return alu->sub8(&(mainBank.af.bytes.H), memory->peek(index->value + memory->peek(pc.value++)));
+    case 0x9E:
+        return alu->sub8(&(mainBank.af.bytes.H), memory->peek(index->value + memory->peek(pc.value++)), true);
+    case 0xA6:
+        return alu->and8(&(mainBank.af.bytes.H), memory->peek(index->value + memory->peek(pc.value++)));
+    case 0xAE:
+        return alu->cp8(mainBank.af.bytes.H, memory->peek(index->value + memory->peek(pc.value++)));
+    case 0xCB:
+        return executeIRBitOperation(index);        
+    case 0xE1:
+        index->value = memory->peek(sp.value++) + (memory->peek(sp.value++) << 8);
+        return 14;
+    case 0xE3:
+        uint8_t spl = memory->peek(sp.value);
+        uint8_t sph = memory->peek(sp.value + 1);
+        memory->poke(sp.value, index->bytes.L);
+        memory->poke(sp.value + 1, index->bytes.H);
+        index->bytes.L = spl;
+        index->bytes.H = sph;
+        return 23;
+    case 0xE5:
+        memory->poke(--sp.value, index->bytes.H);
+        memory->poke(--sp.value, index->bytes.L);
+        return 15;
+    case 0xE9:
+        pc.value = index->value;
+        return 8;
+    case 0xF9:
+        memory->poke(sp.value, index->bytes.L);
+        memory->poke(sp.value + 1, index->bytes.H);
+    default:
+        return 0;
+    }
+}
+
+/**
+ * @brief Execute instruction pointed by PC register after a 0xCB operation for an index register (iX, iY)
+ *
+ * @return uint16_t number of cycles
+ */
+
+uint16_t CPU::executeIRBitOperation(Register* index)
+{
+    auto opcode = memory->peek(pc.value++);
+    
+    uint16_t clockCycles = 0;
+    uint16_t address = index->value + memory->peek(pc.value++);
+    uint8_t value = memory->peek(address);
+
+    switch(opcode)
+    {
+    case 0x06:        
+        clockCycles = alu->rlc(&value);
+        break;
+    case 0x0E:
+        alu->rrc(&value);
+        break;
+    case 0x16:
+        alu->rl(&value);
+        break;
+    case 0x1E:
+        alu->rr(&value);
+        break;
+    case 0x26:
+        alu->sla(&value);
+        break;
+    case 0x2E:
+        alu->sra(&value);
+        break;
+    case 0x3E:
+        alu->srl(&value);
+        break;
+    case 0x46:
+        alu->bit(&value, 0);
+        break;
+    case 0x4E:
+        alu->bit(&value, 1);
+        break;
+    case 0x56:
+        alu->bit(&value, 2);
+        break;
+    case 0x5E:
+        alu->bit(&value, 3);
+        break;
+    case 0x66:
+        alu->bit(&value, 4);
+        break;
+    case 0x6E:
+        alu->bit(&value, 5);    
+        break;
+    case 0x76:
+        alu->bit(&value, 6);
+        break;
+    case 0x7E:
+        alu->bit(&value, 7);
+        break;
+    case 0x86:
+        alu->res(&value, 0);
+        break;
+    case 0x8E:
+        alu->res(&value, 1);
+        break;
+    case 0x96:
+        alu->res(&value, 2);
+        break;
+    case 0x9E:
+        alu->res(&value, 3);
+        break;
+    case 0xA6:
+        alu->res(&value, 4);
+        break;
+    case 0xAE:
+        alu->res(&value, 5);    
+        break;
+    case 0xB6:
+        alu->res(&value, 6);
+        break;
+    case 0xBE:
+        alu->res(&value, 7);
+        break;
+    case 0xC6:
+        alu->set(&value, 0);
+        break;
+    case 0xCE:
+        alu->set(&value, 1);
+        break;
+    case 0xD6:
+        alu->set(&value, 2);
+        break;
+    case 0xDE:
+        alu->set(&value, 3);
+        break;
+    case 0xE6:
+        alu->set(&value, 4);
+        break;
+    case 0xEE:
+        alu->set(&value, 5);
+        break;
+    case 0xF6:
+        alu->set(&value, 6);
+        break;
+    case 0xFE:
+        alu->set(&value, 7);
+        break;
+    default:
+        return 0;
+    }
+
+    memory->poke(address, value);
+    return clockCycles + 8;
 }
 
 } // namespace emuzeta80

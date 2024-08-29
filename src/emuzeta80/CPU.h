@@ -32,6 +32,7 @@
 #include <cstdint>
 
 #include "ALU.h"
+#include "IOPorts.h"
 #include "RAM.h"
 #include "RegistersBank.h"
 
@@ -59,19 +60,27 @@ public:
     void setpc(uint16_t value);
     uint8_t read(uint16_t address = -1);
     void write(uint8_t value, uint16_t address = -1);
+    uint8_t readport(uint16_t port);
+    void writeport(uint8_t value, uint16_t port);
 
 protected:
+    uint16_t executeBitOperation();
+    uint16_t executeIRInstruction(Register* index);    
+    uint16_t executeIRBitOperation(Register* index);
     uint16_t jp(bool condition);
     uint16_t call(bool condition);
     uint16_t ret(bool condition);
     uint16_t rst(uint16_t address);
-    uint16_t ld8mem(Register* reg16, bool high);
     uint16_t inc8mem(uint16_t address);
     uint16_t dec8mem(uint16_t address);
+    uint16_t ld8reg(Register* reg16, bool high);
+    uint16_t ld8reg(Register* reg16, bool high, uint16_t address);
+    uint16_t ld16reg(Register* reg16);
 
 public:
     RAM* memory;
     ALU* alu;
+    IOPorts* devices;
     RegistersBank mainBank;
     RegistersBank alternateBank;
     Register pc; //< Program Counter

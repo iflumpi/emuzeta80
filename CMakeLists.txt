@@ -7,7 +7,8 @@ set(CMAKE_CXX_STANDARD 11)
 set(SOURCES_Z80
 	src/emuzeta80/CPU.cpp
 	src/emuzeta80/RAM.cpp
-	src/emuzeta80/ALU.cpp)
+	src/emuzeta80/ALU.cpp
+    src/emuzeta80/IOPorts.cpp)
 
 include_directories(src/emuzeta80)
 

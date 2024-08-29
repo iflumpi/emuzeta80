@@ -41,30 +41,36 @@ public:
 
   // ---------------------
   // Arithmetic operations
-  // ---------------------
-  uint16_t inc8(Register *reg16, bool high);
-  uint16_t dec8(Register *reg8, bool high);
-  uint16_t inc16(Register *reg16);
+  // ---------------------  
+  uint16_t inc8(uint8_t* value);
+  uint16_t dec8(uint8_t* value);
+  uint16_t dec8mem(uint16_t address);
   uint16_t add16(Register *reg16A, Register *reg16B);
-  uint16_t dec16(Register *reg16);
-  uint16_t add8(Register *reg8A, bool highA, Register *reg8B, bool highB,
-                bool carry = false);
-  uint16_t add8(Register *reg8A, bool highA, char value, bool carry = false);
-  uint16_t sub8(Register *reg8A, bool highA, Register *reg8B, bool highB,
-                bool carry = false);
-  uint16_t sub8(Register *reg8A, bool highA, char value, bool carry = false);
+  uint16_t add8(uint8_t* target, uint8_t source, bool carry = false);
+  uint16_t sub8(uint8_t* target, uint8_t source, bool carry = false);
 
   // ----------------
   // Logic operations
   // ----------------
-  uint16_t and8(Register *reg8A, bool highA, Register *reg8B, bool highB);
-  uint16_t and8(Register *reg8A, bool highA, char value);
-  uint16_t or8(Register *reg8A, bool highA, Register *reg8B, bool highB);
-  uint16_t or8(Register *reg8A, bool highA, char value);
-  uint16_t xor8(Register *reg8A, bool highA, Register *reg8B, bool highB);
-  uint16_t xor8(Register *reg8A, bool highA, char value);
-  uint16_t cp8(Register *reg8A, bool highA, Register *reg8B, bool highB);
-  uint16_t cp8(Register *reg8A, bool highA, char value);
+  uint16_t and8(uint8_t* target, uint8_t value);
+  uint16_t or8(uint8_t* target, uint8_t value);
+  uint16_t xor8(uint8_t* target, uint8_t value);
+  uint16_t cp8(uint8_t target, uint8_t value);
+
+  // -----------------
+  // Bits manipulation
+  // -----------------  
+  uint16_t rlc(uint8_t* value);
+  uint16_t rrc(uint8_t* value);
+  uint16_t rl(uint8_t* value);
+  uint16_t rr(uint8_t* value);
+  uint16_t sla(uint8_t* value);
+  uint16_t sra(uint8_t* value);
+  uint16_t sll(uint8_t* value);
+  uint16_t srl(uint8_t* value);
+  uint16_t bit(uint8_t* value, uint8_t bitPosition);
+  uint16_t res(uint8_t* value, uint8_t bitPosition);
+  uint16_t set(uint8_t* value, uint8_t bitPosition);
 
 protected:
   RegistersBank *mainBank;

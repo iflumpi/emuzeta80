@@ -45,27 +45,22 @@ ALU::ALU(RegistersBank* mainBank)
  * @brief Increase value of a 8-bit register by one
  *
  * This function increments an 8-bit register in the CPU.
- * The register can be either the high or low byte of a 16-bit register.
  * Flags affected: N, P, H, Z, S
  *
- * @param reg16 pointer to the 16-bit register.
- * @param high boolean value indicating whether to increment the high byte or the low byte of the register.
+ * @param value pointer to the 8-bit register.
  * @return uint16_t number of cycles to execute the operation
  */
-uint16_t ALU::inc8(Register* reg16, bool high)
+uint16_t ALU::inc8(uint8_t* value)
 {
-    uint8_t value = high ? reg16->bytes.H : reg16->bytes.L;
-    uint8_t updatedValue = value + 1;
-    if(high)
-        reg16->bytes.H = updatedValue;
-    else
-        reg16->bytes.L = updatedValue;
+    uint8_t updatedValue = *value + 1;
 
     mainBank->setFlag(FLAG_N, false);
-    mainBank->setFlag(FLAG_P, value == 0x7F);
-    mainBank->setFlag(FLAG_H, value == 0x0F);
+    mainBank->setFlag(FLAG_P, *value == 0x7F);
+    mainBank->setFlag(FLAG_H, *value == 0x0F);
     mainBank->setFlag(FLAG_Z, updatedValue == 0);
     mainBank->setFlag(FLAG_S, updatedValue == 0x80);
+
+    *value = updatedValue;
 
     return 4;
 }
@@ -74,27 +69,22 @@ uint16_t ALU::inc8(Register* reg16, bool high)
  * @brief Decrease value of a 8-bit register by one
  *
  * This function decreases an 8-bit register in the CPU.
- * The register can be either the high or low byte of a 16-bit register.
  * Flags affected: N, P, H, Z, S
  *
- * @param reg16 pointer to the 16-bit register.
- * @param high boolean value indicating whether to decrease the high byte or the low byte of the register.
+ * @param value pointer to the 8-bit register.
  * @return uint16_t number of cycles to execute the operation
  */
-uint16_t ALU::dec8(Register* reg8, bool high)
+uint16_t ALU::dec8(uint8_t* value)
 {
-    uint8_t value = high ? reg8->bytes.H : reg8->bytes.L;
-    uint8_t updatedValue = value - 1;
-    if(high)
-        reg8->bytes.H = updatedValue;
-    else
-        reg8->bytes.L = updatedValue;
+    uint8_t updatedValue = *value - 1;
 
-    mainBank->setFlag(FLAG_N, true);
-    mainBank->setFlag(FLAG_P, value == 0x80); // -128 = 0x80 in 2a complement
-    mainBank->setFlag(FLAG_H, updatedValue == 0x0F);
+    mainBank->setFlag(FLAG_N, false);
+    mainBank->setFlag(FLAG_P, *value == 0x7F);
+    mainBank->setFlag(FLAG_H, *value == 0x0F);
     mainBank->setFlag(FLAG_Z, updatedValue == 0);
-    mainBank->setFlag(FLAG_S, updatedValue == 0x7F);
+    mainBank->setFlag(FLAG_S, updatedValue == 0x80);
+
+    *value = updatedValue;
 
     return 4;
 }
@@ -104,66 +94,25 @@ uint16_t ALU::dec8(Register* reg8, bool high)
  *
  * Flags affected: C, N, P, H, Z, S
  *
- * @param reg8A source register (bc, de, hl, af)
- * @param highA flag to specify if select the higher or lower byte of the source register
- * @param reg8B target register (bc, de, hl, af)
- * @param highB flag specify if select the higher or lower byte of the second register
+ * @param target target value register
+ * @param source source value register
  * @param carry true if an additional carry is considered in the addition
  *
  * @return uint16_t number of cycles of the operation
  */
-uint16_t ALU::add8(Register* reg8A, bool highA, Register* reg8B, bool highB, bool carry)
+uint16_t ALU::add8(uint8_t* target, uint8_t source, bool carry)
 {
-    auto valueA = highA ? reg8A->bytes.H : reg8A->bytes.L;
-    auto valueB = highB ? reg8B->bytes.H : reg8B->bytes.L;
-    auto valueC = (carry & mainBank->getFlag(FLAG_C)) ? 1 : 0;
-    uint16_t updatedValue = (uint8_t)valueA + (uint8_t)valueB + (uint8_t)valueC;
-    if(highA)
-        reg8A->bytes.H = (uint8_t)updatedValue;
-    else
-        reg8A->bytes.L = (uint8_t)updatedValue;
+    uint8_t valuec = (carry & mainBank->getFlag(FLAG_C)) ? 1 : 0;
+    uint16_t updatedValue = *target + source + valuec;
 
     mainBank->setFlag(FLAG_N, false);
     mainBank->setFlag(FLAG_Z, updatedValue == 0);
     mainBank->setFlag(FLAG_S, (updatedValue & 0x80) != 0);
     mainBank->setFlag(FLAG_C, updatedValue > 0xFF);
-    mainBank->setFlag(FLAG_H, (valueA & 0x0F) + (valueB & 0x0F) > 0x0F);
+    mainBank->setFlag(FLAG_H, (*target & 0x0F) + (source & 0x0F) > 0x0F);
     mainBank->setFlag(FLAG_P, updatedValue > 127 || updatedValue < -128);
 
-    return 4;
-}
-
-/**
- * @brief Adds value to a 8-bit register
- *
- * This function adds the specified 8-bit value to the given register
- * If the carry flag is set, it adds an additional 1 to the result
- *
- * Flags affected: C, N, P, H, Z, S
- *
- * @param reg8A pointer to the register to add the value to
- * @param highA flag indicating whether the high or low byte of the register should be modified
- * @param value 8-bit value to add to the register
- * @param carry flag indicating whether to include an additional carry in the addition
- *
- * @return number of cycles of the operation
- */
-uint16_t ALU::add8(Register* reg8A, bool highA, char value, bool carry)
-{
-    auto valueA = highA ? reg8A->bytes.H : reg8A->bytes.L;
-    auto valueC = carry & mainBank->getFlag(FLAG_C) ? 1 : 0;
-    int16_t updatedValue = (char)valueA + value + valueC;
-    if(highA)
-        reg8A->bytes.H = (char)updatedValue;
-    else
-        reg8A->bytes.L = (char)updatedValue;
-
-    mainBank->setFlag(FLAG_N, false);
-    mainBank->setFlag(FLAG_Z, updatedValue == 0);
-    mainBank->setFlag(FLAG_S, updatedValue < 0);
-    mainBank->setFlag(FLAG_C, updatedValue > 0xFF);
-    mainBank->setFlag(FLAG_H, (valueA & 0x0F) + (value & 0x0F) > 0x0F);
-    mainBank->setFlag(FLAG_P, updatedValue > 127 || updatedValue < -128);
+    *target = updatedValue;
 
     return 4;
 }
@@ -173,115 +122,42 @@ uint16_t ALU::add8(Register* reg8A, bool highA, char value, bool carry)
  *
  * Flags affected: C, N, P, H, Z, S
  *
- * @param reg8A source register (bc, de, hl, af)
- * @param highA flag to specify if select the higher or lower byte of the source register
- * @param reg8B target register (bc, de, hl, af)
- * @param highB flag specify if select the higher or lower byte of the target register
+ * @param target target value register
+ * @param source source value register
  * @param carry true if an additional carry is considered in the substraction
  *
  * @return number of cycles of the operation
  */
-uint16_t ALU::sub8(Register* reg8A, bool highA, Register* reg8B, bool highB, bool carry)
+uint16_t ALU::sub8(uint8_t* target, uint8_t source, bool carry)
 {
-    auto valueA = highA ? reg8A->bytes.H : reg8A->bytes.L;
-    auto valueB = highB ? reg8B->bytes.H : reg8B->bytes.L;
-    auto valueC = (carry & mainBank->getFlag(FLAG_C)) ? 1 : 0;
-    int16_t updatedValue = (char)valueA - (char)valueB - (char)valueC;
-    if(highA)
-        reg8A->bytes.H = (char)updatedValue;
-    else
-        reg8A->bytes.L = (char)updatedValue;
+    auto valuec = (carry & mainBank->getFlag(FLAG_C)) ? 1 : 0;
+    int16_t updatedValue = (char)(*target) - (char)source - (char)valuec;
 
     mainBank->setFlag(FLAG_N, true);
     mainBank->setFlag(FLAG_Z, updatedValue == 0);
     mainBank->setFlag(FLAG_S, updatedValue < 0);
     mainBank->setFlag(FLAG_C, (updatedValue & 0xFF00) > 0);               // TODO
-    mainBank->setFlag(FLAG_H, (valueA & 0x0F) + (valueB & 0x0F) > 0x0F);  // TODO (valueB + c?)
+    mainBank->setFlag(FLAG_H, (*target & 0x0F) + (source & 0x0F) > 0x0F); // TODO (valueB + c?)
     mainBank->setFlag(FLAG_P, updatedValue > 127 || updatedValue < -128); // TODO
 
+    *target = updatedValue;
+
     return 4;
 }
 
 /**
- * @brief Subtracts the value of VALUE to REG8B
+ * @brief AND operation between two values
  *
  * Flags affected: C, N, P, H, Z, S
- * 
- * @param reg8A source register (bc, de, hl, af)
- * @param highA flag to specify if select the higher or lower byte of the source register
- * @param value value to substract to the source register
- * @param carry true if an additional carry is considered in the substraction
- * @return uint16_t number of cycles of the operation
- */
-uint16_t ALU::sub8(Register* reg8A, bool highA, char value, bool carry)
-{
-    auto valueA = highA ? reg8A->bytes.H : reg8A->bytes.L;
-    auto valueC = (carry & mainBank->getFlag(FLAG_C)) ? 1 : 0;
-    int16_t updatedValue = (char)valueA - value - valueC;
-    if(highA)
-        reg8A->bytes.H = (char)updatedValue;
-    else
-        reg8A->bytes.L = (char)updatedValue;
-
-    mainBank->setFlag(FLAG_N, true);
-    mainBank->setFlag(FLAG_Z, updatedValue == 0);
-    mainBank->setFlag(FLAG_S, updatedValue < 0);
-    mainBank->setFlag(FLAG_C, (updatedValue & 0xFF00) > 0);               // TODO
-    mainBank->setFlag(FLAG_H, (valueA & 0x0F) + (value & 0x0F) > 0x0F);   // TODO (valueB + c?)
-    mainBank->setFlag(FLAG_P, updatedValue > 127 || updatedValue < -128); // TODO
-
-    return 4;
-}
-
-/**
- * @brief AND operation between two registers
  *
- * Flags affected: C, N, P, H, Z, S
- * 
- * @param reg8A source register (bc, de, hl, af)
- * @param highA flag to specify if select the higher or lower byte of the source register
- * @param reg8B target register ((bc, de, hl, af)
- * @param highB flag specify if select the higher or lower byte of the target register
+ * @param target target value
+ * @param value source value (target = target & value)
  * @return uint16_t number of cycles of the operation
  */
-uint16_t ALU::and8(Register* reg8A, bool highA, Register* reg8B, bool highB)
+uint16_t ALU::and8(uint8_t* target, uint8_t value)
 {
-    auto valueA = highA ? reg8A->bytes.H : reg8A->bytes.L;
-    auto valueB = highB ? reg8B->bytes.H : reg8B->bytes.L;
-    uint8_t updatedValue = valueA & valueB;
-
-    if(highA)
-        reg8A->bytes.H = (char)updatedValue;
-    else
-        reg8A->bytes.L = (char)updatedValue;
-
-    mainBank->setFlag(FLAG_N, false);
-    mainBank->setFlag(FLAG_Z, updatedValue == 0);
-    mainBank->setFlag(FLAG_S, (updatedValue & 0x80) > 0);
-    mainBank->setFlag(FLAG_C, false);
-    mainBank->setFlag(FLAG_H, true);
-    mainBank->setFlag(FLAG_P, true); // TODO
-
-    return 4;
-}
-
-/**
- * @brief AND operation between a register and a value
- *
- * @param reg8A source register (bc, de, hl, af)
- * @param highA flag to specify if select the higher or lower byte of the source register
- * @param value 8-bit value to AND with register
- * @return uint16_t number of cycles of the operation
- */
-uint16_t ALU::and8(Register* reg8A, bool highA, char value)
-{
-    auto valueA = highA ? reg8A->bytes.H : reg8A->bytes.L;
-    uint8_t updatedValue = valueA & value;
-
-    if(highA)
-        reg8A->bytes.H = (char)updatedValue;
-    else
-        reg8A->bytes.L = (char)updatedValue;
+    uint8_t updatedValue = *target & value;
+    *target = updatedValue;
 
     mainBank->setFlag(FLAG_N, false);
     mainBank->setFlag(FLAG_Z, updatedValue == 0);
@@ -295,51 +171,13 @@ uint16_t ALU::and8(Register* reg8A, bool highA, char value)
 
 /**
  * @brief OR operation between two registers
- *
- * @param reg8A source register (bc, de, hl, af)
- * @param highA flag to specify if select the higher or lower byte of the source register
- * @param reg8B target register ((bc, de, hl, af)
- * @param highB flag specify if select the higher or lower byte of the target register
+ * 
  * @return uint16_t number of cycles of the operation
  */
-uint16_t ALU::or8(Register* reg8A, bool highA, Register* reg8B, bool highB)
+uint16_t ALU::or8(uint8_t* target, uint8_t value)
 {
-    auto valueA = highA ? reg8A->bytes.H : reg8A->bytes.L;
-    auto valueB = highB ? reg8B->bytes.H : reg8B->bytes.L;
-    uint8_t updatedValue = valueA | valueB;
-
-    if(highA)
-        reg8A->bytes.H = (char)updatedValue;
-    else
-        reg8A->bytes.L = (char)updatedValue;
-
-    mainBank->setFlag(FLAG_N, false);
-    mainBank->setFlag(FLAG_Z, updatedValue == 0);
-    mainBank->setFlag(FLAG_S, (updatedValue & 0x80) > 0);
-    mainBank->setFlag(FLAG_C, false);
-    mainBank->setFlag(FLAG_H, false);
-    mainBank->setFlag(FLAG_P, true); // TODO
-
-    return 4;
-}
-
-/**
- * @brief OR operation between a register and a value
- *
- * @param reg8A source register (bc, de, hl, af)
- * @param highA flag to specify if select the higher or lower byte of the source register
- * @param value 8-bit value to OR with register
- * @return uint16_t number of cycles of the operation
- */
-uint16_t ALU::or8(Register* reg8A, bool highA, char value)
-{
-    auto valueA = highA ? reg8A->bytes.H : reg8A->bytes.L;
-    uint8_t updatedValue = valueA | value;
-
-    if(highA)
-        reg8A->bytes.H = (char)updatedValue;
-    else
-        reg8A->bytes.L = (char)updatedValue;
+    uint8_t updatedValue = *target | value;
+    *target = updatedValue;
 
     mainBank->setFlag(FLAG_N, false);
     mainBank->setFlag(FLAG_Z, updatedValue == 0);
@@ -353,51 +191,13 @@ uint16_t ALU::or8(Register* reg8A, bool highA, char value)
 
 /**
  * @brief XOR operation between two registers
- *
- * @param reg8A source register (bc, de, hl, af)
- * @param highA flag to specify if select the higher or lower byte of the source register
- * @param reg8B target register ((bc, de, hl, af)
- * @param highB flag specify if select the higher or lower byte of the target register
+ * 
  * @return uint16_t number of cycles of the operation
  */
-uint16_t ALU::xor8(Register* reg8A, bool highA, Register* reg8B, bool highB)
-{
-    auto valueA = highA ? reg8A->bytes.H : reg8A->bytes.L;
-    auto valueB = highB ? reg8B->bytes.H : reg8B->bytes.L;
-    uint8_t updatedValue = valueA ^ valueB;
-
-    if(highA)
-        reg8A->bytes.H = (char)updatedValue;
-    else
-        reg8A->bytes.L = (char)updatedValue;
-
-    mainBank->setFlag(FLAG_N, false);
-    mainBank->setFlag(FLAG_Z, updatedValue == 0);
-    mainBank->setFlag(FLAG_S, (updatedValue & 0x80) > 0);
-    mainBank->setFlag(FLAG_C, false);
-    mainBank->setFlag(FLAG_H, false);
-    mainBank->setFlag(FLAG_P, true); // TODO
-
-    return 4;
-}
-
-/**
- * @brief XOR operation between a register and a value
- *
- * @param reg8A source register (bc, de, hl, af)
- * @param highA flag to specify if select the higher or lower byte of the source register
- * @param value 8-bit value to XOR with register
- * @return uint16_t number of cycles of the operation
- */
-uint16_t ALU::xor8(Register* reg8A, bool highA, char value)
-{
-    auto valueA = highA ? reg8A->bytes.H : reg8A->bytes.L;
-    uint8_t updatedValue = valueA ^ value;
-
-    if(highA)
-        reg8A->bytes.H = (char)updatedValue;
-    else
-        reg8A->bytes.L = (char)updatedValue;
+uint16_t ALU::xor8(uint8_t* target, uint8_t value)
+{    
+    uint8_t updatedValue = *target ^ value;
+    *target = updatedValue;
 
     mainBank->setFlag(FLAG_N, false);
     mainBank->setFlag(FLAG_Z, updatedValue == 0);
@@ -414,54 +214,21 @@ uint16_t ALU::xor8(Register* reg8A, bool highA, char value)
  *
  * This function compares the contents of two 8-bit registers without modifying
  * their values. It performs a comparison similar to a subtraction but discards
- * the result. The zero flag (Z) and carry flag (C) may be affected based on the
- * comparison result
+ * the result.
  *
- * @param reg8A source register (bc, de, hl, af)
- * @param highA flag to specify if select the higher or lower byte of the source register
- * @param reg8B target register ((bc, de, hl, af)
- * @param highB flag specify if select the higher or lower byte of the target register
+ * @param reg1 first register
+ * @param reg2 second register (cp -> reg1-reg2)
  * @return uint16_t number of cycles of the operation
  */
-uint16_t ALU::cp8(Register* reg8A, bool highA, Register* reg8B, bool highB)
+uint16_t ALU::cp8(uint8_t reg1, uint8_t reg2)
 {
-    auto valueA = highA ? reg8A->bytes.H : reg8A->bytes.L;
-    auto valueB = highB ? reg8B->bytes.H : reg8B->bytes.L;
-    int16_t updatedValue = (char)valueA - (char)valueB;
+    int16_t updatedValue = (char)reg1 - (char)reg2;
 
     mainBank->setFlag(FLAG_N, true);
     mainBank->setFlag(FLAG_Z, updatedValue == 0);
     mainBank->setFlag(FLAG_S, updatedValue < 0);
     mainBank->setFlag(FLAG_C, (updatedValue & 0xFF00) > 0);               // TODO
-    mainBank->setFlag(FLAG_H, (valueA & 0x0F) + (valueB & 0x0F) > 0x0F);  // TODO (valueB + c?)
-    mainBank->setFlag(FLAG_P, updatedValue > 127 || updatedValue < -128); // TODO
-
-    return 4;
-}
-
-/**
- * @brief Compares an 8-bit register with a given 8-bit value without modifying them
- *
- * This function compares the contents of an 8-bit register and an 8-bit value without
- * modifying their values. It performs a comparison similar to a subtraction but discards
- * the result. The zero flag (Z) and carry flag (C) may be affected based on the
- * comparison result
- * 
- * @param reg8A source register (bc, de, hl, af)
- * @param highA flag to specify if select the higher or lower byte of the source register
- * @param value 8-bit value for comparison
- * @return uint16_t number of cycles of the operation
- */
-uint16_t ALU::cp8(Register* reg8A, bool highA, char value)
-{
-    auto valueA = highA ? reg8A->bytes.H : reg8A->bytes.L;
-    int16_t updatedValue = (char)valueA - value;
-
-    mainBank->setFlag(FLAG_N, true);
-    mainBank->setFlag(FLAG_Z, updatedValue == 0);
-    mainBank->setFlag(FLAG_S, updatedValue < 0);
-    mainBank->setFlag(FLAG_C, (updatedValue & 0xFF00) > 0);               // TODO
-    mainBank->setFlag(FLAG_H, (valueA & 0x0F) + (value & 0x0F) > 0x0F);   // TODO (valueB + c?)
+    mainBank->setFlag(FLAG_H, (reg1 & 0x0F) + (reg2 & 0x0F) > 0x0F);  // TODO (valueB + c?)
     mainBank->setFlag(FLAG_P, updatedValue > 127 || updatedValue < -128); // TODO
 
     return 4;
@@ -472,7 +239,7 @@ uint16_t ALU::cp8(Register* reg8A, bool highA, char value)
  *
  * This function adds the contents of two 16-bit registers and updates the result in
  * the specified register. The carry flag (C) may be affected based on the addition result.
- * 
+ *
  * @param reg16A source register (bc, de, hl, af)
  * @param reg16B target register ((bc, de, hl, af)
  * @return uint16_t number of cycles of the operation
@@ -493,6 +260,139 @@ uint16_t ALU::add16(Register* reg16A, Register* reg16B)
     mainBank->setFlag(FLAG_H, (reg16A->value & 0x0F) + (reg16B->value & 0x0F) > 0x0F);
 
     return 11;
+}
+
+uint16_t ALU::rlc(uint8_t* value)
+{
+    auto msb = (*value & 0x80) == 0x80;
+    auto updatedValue = (*value << 1) | (msb ? 0x01 : 0x00);
+    *value = updatedValue;
+
+    mainBank->setFlag(FLAG_C, msb);
+    mainBank->setFlag(FLAG_N, false);
+    mainBank->setFlag(FLAG_H, false);
+    mainBank->setFlag(FLAG_Z, *value == 0);
+
+    return 0;
+}
+
+uint16_t ALU::rrc(uint8_t* value)
+{
+    auto lsb = (*value & 0x01) == 0x01;
+    auto updatedValue = (*value >> 1) | (lsb ? 0x80 : 0x80);
+    *value = updatedValue;
+
+    mainBank->setFlag(FLAG_C, lsb);
+    mainBank->setFlag(FLAG_N, false);
+    mainBank->setFlag(FLAG_H, false);
+    mainBank->setFlag(FLAG_Z, *value == 0);
+
+    return 0;
+}
+
+uint16_t ALU::rl(uint8_t* value)
+{
+    auto msb = (*value & 0x80) == 0x80;
+    auto updatedValue = (*value << 1) | (mainBank->getFlag(FLAG_C) ? 0x01 : 0x00);
+    *value = updatedValue;
+
+    mainBank->setFlag(FLAG_C, msb);
+    mainBank->setFlag(FLAG_N, false);
+    mainBank->setFlag(FLAG_H, false);
+    mainBank->setFlag(FLAG_Z, *value == 0);
+
+    return 0;
+}
+
+uint16_t ALU::rr(uint8_t* value)
+{
+    auto lsb = (*value & 0x80) == 0x80;
+    auto updatedValue = (*value >> 1) | (mainBank->getFlag(FLAG_C) ? 0x80 : 0x80);
+    *value = updatedValue;
+
+    mainBank->setFlag(FLAG_C, lsb);
+    mainBank->setFlag(FLAG_N, false);
+    mainBank->setFlag(FLAG_H, false);
+    mainBank->setFlag(FLAG_Z, *value == 0);
+
+    return 0;
+}
+
+uint16_t ALU::sla(uint8_t* value)
+{
+    auto msb = (*value & 0x80) == 0x80;
+    *value = *value << 1;
+
+    mainBank->setFlag(FLAG_C, msb);
+    mainBank->setFlag(FLAG_N, false);
+    mainBank->setFlag(FLAG_H, false);
+    mainBank->setFlag(FLAG_Z, *value == 0);
+
+    return 0;
+}
+
+uint16_t ALU::sra(uint8_t* value)
+{
+    auto lsb = (*value & 0x01) == 0x01;
+    *value = *value >> 1;
+
+    mainBank->setFlag(FLAG_C, lsb);
+    mainBank->setFlag(FLAG_N, false);
+    mainBank->setFlag(FLAG_H, false);
+    mainBank->setFlag(FLAG_Z, *value == 0);
+
+    return 0;
+}
+
+uint16_t ALU::sll(uint8_t* value)
+{
+    auto msb = (*value & 0x80) == 0x80;
+    *value = (*value << 1) + 0x01;
+
+    mainBank->setFlag(FLAG_C, msb);
+    mainBank->setFlag(FLAG_N, false);
+    mainBank->setFlag(FLAG_H, false);
+    mainBank->setFlag(FLAG_Z, *value == 0);
+
+    return 0;
+}
+
+uint16_t ALU::srl(uint8_t* value)
+{
+    auto lsb = (*value & 0x01) == 0x01;
+    *value = *value >> 1;
+
+    mainBank->setFlag(FLAG_C, lsb);
+    mainBank->setFlag(FLAG_N, false);
+    mainBank->setFlag(FLAG_H, false);
+    mainBank->setFlag(FLAG_Z, *value == 0);
+
+    return 0;
+}
+
+uint16_t ALU::bit(uint8_t* value, uint8_t bitPosition)
+{
+    uint8_t mask = 1 << bitPosition;
+
+    mainBank->setFlag(FLAG_Z, (*value & mask) != 0);
+    mainBank->setFlag(FLAG_N, false);
+    mainBank->setFlag(FLAG_H, true);
+}
+
+uint16_t ALU::res(uint8_t* value, uint8_t bitPosition)
+{
+    uint8_t mask = ~(1 << bitPosition);
+    *value &= mask;
+
+    return 8;
+}
+
+uint16_t ALU::set(uint8_t* value, uint8_t bitPosition)
+{
+    uint8_t mask = 1 << bitPosition;
+    *value |= mask;
+
+    return 8;
 }
 
 } // namespace emuzeta80
