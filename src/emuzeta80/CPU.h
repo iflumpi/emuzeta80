@@ -67,6 +67,7 @@ protected:
     uint16_t executeBitOperation();
     uint16_t executeIRInstruction(Register* index);    
     uint16_t executeIRBitOperation(Register* index);
+    uint16_t executeMiscInstruction();
     uint16_t jp(bool condition);
     uint16_t call(bool condition);
     uint16_t ret(bool condition);
@@ -76,6 +77,8 @@ protected:
     uint16_t ld8reg(Register* reg16, bool high);
     uint16_t ld8reg(Register* reg16, bool high, uint16_t address);
     uint16_t ld16reg(Register* reg16);
+    uint16_t in(uint8_t* target, uint16_t address);
+    uint16_t out(uint8_t value, uint16_t address);
 
 public:
     RAM* memory;

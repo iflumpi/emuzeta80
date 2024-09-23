@@ -45,9 +45,10 @@ public:
   uint16_t inc8(uint8_t* value);
   uint16_t dec8(uint8_t* value);
   uint16_t dec8mem(uint16_t address);
-  uint16_t add16(Register *reg16A, Register *reg16B);
+  uint16_t add16(uint16_t* target, uint16_t source, bool carry = false);
   uint16_t add8(uint8_t* target, uint8_t source, bool carry = false);
   uint16_t sub8(uint8_t* target, uint8_t source, bool carry = false);
+  uint16_t sub16(uint16_t* target, uint16_t source, bool carry = false);
 
   // ----------------
   // Logic operations
@@ -71,6 +72,7 @@ public:
   uint16_t bit(uint8_t* value, uint8_t bitPosition);
   uint16_t res(uint8_t* value, uint8_t bitPosition);
   uint16_t set(uint8_t* value, uint8_t bitPosition);
+  uint16_t neg(uint8_t* value);
 
 protected:
   RegistersBank *mainBank;

@@ -238,26 +238,34 @@ uint16_t ALU::cp8(uint8_t reg1, uint8_t reg2)
  * @brief Adds two 16-bit values and updates the result in the specified register.
  *
  * This function adds the contents of two 16-bit registers and updates the result in
- * the specified register. The carry flag (C) may be affected based on the addition result.
+ * the specified register.
  *
  * @param reg16A source register (bc, de, hl, af)
  * @param reg16B target register ((bc, de, hl, af)
  * @return uint16_t number of cycles of the operation
  */
-uint16_t ALU::add16(Register* reg16A, Register* reg16B)
+uint16_t ALU::add16(uint16_t* target, uint16_t source, bool carry)
 {
-    // Adds the value of REG16B to REG16A
-    // Flags affected: C, N, H
-
-    uint16_t value = reg16A->value;
-    uint16_t updatedValue = reg16A->value + reg16B->value;
-    reg16A->value = updatedValue;
+    uint16_t previousValue = *target;    
+    *target = *target + source + ((carry & mainBank->getFlag(FLAG_C)) ? 1 : 0);    
 
     // TODO: Add Carry Bit?
-
-    mainBank->setFlag(FLAG_C, value + reg16B->value > 0xFF);
+    mainBank->setFlag(FLAG_C, previousValue + source > 0xFF);
     mainBank->setFlag(FLAG_N, false);
-    mainBank->setFlag(FLAG_H, (reg16A->value & 0x0F) + (reg16B->value & 0x0F) > 0x0F);
+    mainBank->setFlag(FLAG_H, (*target & 0x0F) + (source & 0x0F) > 0x0F);
+
+    return 11;
+}
+
+uint16_t ALU::sub16(uint16_t* target, uint16_t source, bool carry)
+{
+    uint16_t previousValue = *target;
+    *target = *target + source + ((carry & mainBank->getFlag(FLAG_C)) ? 1 : 0);    
+
+    // TODO: Add Carry Bit?
+    mainBank->setFlag(FLAG_C, previousValue + source > 0xFF);
+    mainBank->setFlag(FLAG_N, false);
+    mainBank->setFlag(FLAG_H, (*target & 0x0F) + (source & 0x0F) > 0x0F);
 
     return 11;
 }
@@ -391,6 +399,15 @@ uint16_t ALU::set(uint8_t* value, uint8_t bitPosition)
 {
     uint8_t mask = 1 << bitPosition;
     *value |= mask;
+
+    return 8;
+}
+
+uint16_t ALU::neg(uint8_t* value)
+{
+    *value = ~(*value);
+
+    // TODO update flags
 
     return 8;
 }

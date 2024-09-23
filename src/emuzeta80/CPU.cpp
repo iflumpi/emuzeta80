@@ -317,6 +317,23 @@ uint16_t CPU::ld16reg(Register* reg16)
     return 10;
 }
 
+uint16_t CPU::in(uint8_t* target, uint16_t address)
+{
+    *target = devices->read(address);
+
+    // TODO
+    // update flags
+
+    return 4; // FIXME
+}
+
+uint16_t CPU::out(uint8_t value, uint16_t address)
+{
+    devices->write(address, value);
+
+    return 12;
+}
+
 /**
  * @brief Execute instruction pointed by PC register
  *
@@ -445,7 +462,7 @@ uint16_t CPU::execute()
         // Adds the value of BC to HL
         // Flags affected: C, N, H
 
-        clockCycles += alu->add16(&(mainBank.hl), &(mainBank.bc));
+        clockCycles += alu->add16(&(mainBank.hl.value), mainBank.bc.value);
         break;
     }
 
@@ -642,7 +659,7 @@ uint16_t CPU::execute()
         // Adds the value of DE to HL
         // Flags affected: C, N, H
 
-        clockCycles += alu->add16(&(mainBank.hl), &(mainBank.de));
+        clockCycles += alu->add16(&(mainBank.hl.value), mainBank.de.value);
         break;
     }
 
@@ -836,7 +853,7 @@ uint16_t CPU::execute()
         // Adds the value of HL to HL
         // Flags affected: C, N, H
 
-        clockCycles += alu->add16(&(mainBank.hl), &(mainBank.hl));
+        clockCycles += alu->add16(&(mainBank.hl.value), mainBank.hl.value);
         break;
     }
 
@@ -1034,7 +1051,7 @@ uint16_t CPU::execute()
         // Adds the value of SP to HL
         // Flags affected: C, N, H
 
-        clockCycles += alu->add16(&(mainBank.hl), &sp);
+        clockCycles += alu->add16(&(mainBank.hl.value), sp.value);
         break;
     }
 
@@ -3199,7 +3216,7 @@ uint16_t CPU::execute()
     }
 
     case 0xFD:
-    {        
+    {
         clockCycles += executeIRInstruction(&iY);
         break;
     }
@@ -3933,9 +3950,9 @@ uint16_t CPU::executeIRInstruction(Register* index)
     switch(opcode)
     {
     case 0x09:
-        return alu->add16(index, &(mainBank.bc));
+        return alu->add16(&(index->value), mainBank.bc.value);
     case 0x19:
-        return alu->add16(index, &(mainBank.de));
+        return alu->add16(&(index->value), mainBank.de.value);
     case 0x21:
         return ld16reg(index);
     case 0x22:
@@ -3946,11 +3963,13 @@ uint16_t CPU::executeIRInstruction(Register* index)
         index->value += 1;
         return 10;
     case 0x29:
-        return alu->add16(index, index);
+        return alu->add16(&(index->value), index->value);
     case 0x2A:
+    {
         auto address = memory->peek(pc.value++) + (memory->peek(pc.value++) << 8);
         index->bytes.L = memory->peek(address);
         return 20;
+    }
     case 0x2B:
         index->value -= 1;
         return 10;
@@ -3962,7 +3981,7 @@ uint16_t CPU::executeIRInstruction(Register* index)
         memory->poke(index->value + memory->peek(pc.value++), memory->peek(pc.value++));
         return 19;
     case 0x39:
-        return alu->add16(index, &sp);
+        return alu->add16(&(index->value), sp.value);
     case 0x46:
         return ld8reg(&(mainBank.bc), true, index->value + memory->peek(pc.value++));
     case 0x4E:
@@ -4011,11 +4030,12 @@ uint16_t CPU::executeIRInstruction(Register* index)
     case 0xAE:
         return alu->cp8(mainBank.af.bytes.H, memory->peek(index->value + memory->peek(pc.value++)));
     case 0xCB:
-        return executeIRBitOperation(index);        
+        return executeIRBitOperation(index);
     case 0xE1:
         index->value = memory->peek(sp.value++) + (memory->peek(sp.value++) << 8);
         return 14;
     case 0xE3:
+    {
         uint8_t spl = memory->peek(sp.value);
         uint8_t sph = memory->peek(sp.value + 1);
         memory->poke(sp.value, index->bytes.L);
@@ -4023,6 +4043,7 @@ uint16_t CPU::executeIRInstruction(Register* index)
         index->bytes.L = spl;
         index->bytes.H = sph;
         return 23;
+    }
     case 0xE5:
         memory->poke(--sp.value, index->bytes.H);
         memory->poke(--sp.value, index->bytes.L);
@@ -4047,14 +4068,14 @@ uint16_t CPU::executeIRInstruction(Register* index)
 uint16_t CPU::executeIRBitOperation(Register* index)
 {
     auto opcode = memory->peek(pc.value++);
-    
+
     uint16_t clockCycles = 0;
     uint16_t address = index->value + memory->peek(pc.value++);
     uint8_t value = memory->peek(address);
 
     switch(opcode)
     {
-    case 0x06:        
+    case 0x06:
         clockCycles = alu->rlc(&value);
         break;
     case 0x0E:
@@ -4091,7 +4112,7 @@ uint16_t CPU::executeIRBitOperation(Register* index)
         alu->bit(&value, 4);
         break;
     case 0x6E:
-        alu->bit(&value, 5);    
+        alu->bit(&value, 5);
         break;
     case 0x76:
         alu->bit(&value, 6);
@@ -4115,7 +4136,7 @@ uint16_t CPU::executeIRBitOperation(Register* index)
         alu->res(&value, 4);
         break;
     case 0xAE:
-        alu->res(&value, 5);    
+        alu->res(&value, 5);
         break;
     case 0xB6:
         alu->res(&value, 6);
@@ -4153,6 +4174,35 @@ uint16_t CPU::executeIRBitOperation(Register* index)
 
     memory->poke(address, value);
     return clockCycles + 8;
+}
+
+/**
+ * @brief Execute instruction pointed by PC register after a 0xDE instruction
+ *
+ * @return uint16_t number of cycles
+ */
+
+uint16_t CPU::executeMiscInstruction()
+{
+    auto opcode = memory->peek(pc.value++);
+
+    switch(opcode)
+    {
+    case 0x40:
+        return in(&(mainBank.bc.bytes.H), mainBank.bc.value);
+    case 0x41:
+        return out(mainBank.bc.bytes.H, mainBank.bc.value);
+    case 0x42:
+        return alu->sub16(&(mainBank.hl.value), mainBank.bc.value, true);
+    case 0x43:
+        memory->poke(pc.value++, mainBank.bc.bytes.L);
+        memory->poke(pc.value++, mainBank.bc.bytes.H);
+        return 20;
+    case 0x44:
+        return alu->neg(&(mainBank.af.bytes.H));
+    default:
+        return 0;
+    }
 }
 
 } // namespace emuzeta80
